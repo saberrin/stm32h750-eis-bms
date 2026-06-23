@@ -60,11 +60,21 @@ uint8_t Meas_Comp_Flag = 0;
 
 
 
-static float CodeToVoltage(uint32_t raw)
+static int32_t RawToSignedCode(uint32_t raw)
 {
     int32_t val = raw >> 8;
     if(val & 0x800000) val |= 0xFF000000;
-    return (float)val / 8388608.0f * ADS_VREF;
+    return val;
+}
+
+static float SignedCodeToVoltage(int32_t code)
+{
+    return (float)code / 8388608.0f * ADS_VREF;
+}
+
+static float CodeToVoltage(uint32_t raw)
+{
+    return SignedCodeToVoltage(RawToSignedCode(raw));
 }
 
 
@@ -101,12 +111,12 @@ void set_excitation_current(float current)
 
 
 
-// 台阶补偿全局变量
-static uint32_t last_raw_volt = 0;    // 上一组最后一次电压原始码
-static uint32_t last_raw_curr = 0;   // 上一组最后一次电流原始码
-static int32_t delta_volt_code = 0;   // 电压台阶偏移(有符号，支持正负)
-static int32_t delta_curr_code = 0;   // 电流台阶偏移(有符号，支持正负)
-static uint8_t first_measure_flag = 1;// 首次测量标记
+// 采样率切换台阶补偿：用切换后静态基线均值估计ADC数字滤波器档位带来的偏移
+static int32_t last_baseline_volt_code = 0;
+static int32_t last_baseline_curr_code = 0;
+static int32_t delta_volt_code = 0;
+static int32_t delta_curr_code = 0;
+static uint8_t first_measure_flag = 1;
 
 
 
@@ -184,33 +194,42 @@ void Auto_Set_ADC_SampleRate(double Freq)
     }
     while(READ_DRDY());
 
-    // 读取切换后200组求电压平均值，消除单点噪声，电流读取逻辑完全保留不变
+    // 读取切换后一批静态样本，估计采样率档位切换引入的数字码台阶。
     uint32_t tmp_v, tmp_i;
     int64_t sum_v = 0;
+    int64_t sum_i = 0;
     const uint16_t avg_cnt = 200;
     for(uint16_t k=0; k<avg_cnt; k++)
     {
         ADS131A0X_Read_Ch1_Ch2(&tmp_i, &tmp_v);
-        sum_v += tmp_v;
+        sum_i += RawToSignedCode(tmp_i);
+        sum_v += RawToSignedCode(tmp_v);
+        Watchdog_Refresh();
     }
-    uint32_t avg_v = (uint32_t)(sum_v / avg_cnt);
-    // 最后再读一组给tmp_i，维持原有电流变量赋值逻辑不动
-    ADS131A0X_Read_Ch1_Ch2(&tmp_i, &tmp_v);
+
+    int32_t avg_i_code = (int32_t)(sum_i / avg_cnt);
+    int32_t avg_v_code = (int32_t)(sum_v / avg_cnt);
 
     if(first_measure_flag == 1)
     {
         delta_volt_code = 0;
         delta_curr_code = 0;
-        last_raw_volt = avg_v;  // 电压用平均值做基准
-        last_raw_curr = tmp_i; // 电流保持原单点读取不变
         first_measure_flag = 0;
     }
     else
     {
-        // 电压差值用平均基准，电流差值逻辑完全不动、原样保留
-        delta_volt_code = (int32_t)avg_v - (int32_t)last_raw_volt;
-        delta_curr_code = (int32_t)tmp_i - (int32_t)last_raw_curr;
+        delta_volt_code = avg_v_code - last_baseline_volt_code;
+        delta_curr_code = avg_i_code - last_baseline_curr_code;
     }
+
+    last_baseline_volt_code = avg_v_code;
+    last_baseline_curr_code = avg_i_code;
+
+    printf("ADC采样率切换: Freq=%.6fHz, SPS=%lu, V_step=%.6fmV, I_step=%.6fmV\r\n",
+           Freq,
+           (unsigned long)target_sps,
+           SignedCodeToVoltage(delta_volt_code) * 1000.0f,
+           SignedCodeToVoltage(delta_curr_code) * 1000.0f);
 }
 
 
@@ -371,20 +390,15 @@ memset(Current,0,sizeof(Current));
 		//	   LED_Green_Toggle();
 		}
    Power5200_Disable();
-		
-			last_raw_volt = Voltage_data[Sampling_Count-1];
-			last_raw_curr = Current_data[Sampling_Count-1];
-		
-		
-		
+
 	 printf("Voltage:\n");
 	 for (int i = 0; i < Sampling_Count; i++) {
 	//	Voltage[i] =	 -1*AD7606B_Digital2Voltage(Voltage_data[i]);	//已经校准好，单位V	
    //   Voltage[i]=-1.0*Voltage_data[i]/1000.0;
 		 
-	int32_t real_v_raw = (int32_t)Voltage_data[i] - delta_volt_code;
+	int32_t real_v_code = RawToSignedCode(Voltage_data[i]) - delta_volt_code;
 		
-       Voltage[i]=-1*CodeToVoltage(real_v_raw);
+       Voltage[i] = -1.0f * SignedCodeToVoltage(real_v_code);
 //		 Voltage[i]=-1*CodeToVoltage(Voltage_data[i]);
 		 
 		 
@@ -398,7 +412,8 @@ memset(Current,0,sizeof(Current));
 	 for (int i = 0; i < Sampling_Count; i++) {
 		//		Current[i] =	2* AD7606B_Digital2Voltage(Current_data[i])-5;	//已经校准好，单位A
  //    Current[i] =2.0*Current_data[i]/1000.0-5.0;
-    Current[i]=CodeToVoltage(Current_data[i]);
+    int32_t real_i_code = RawToSignedCode(Current_data[i]) - delta_curr_code;
+    Current[i] = SignedCodeToVoltage(real_i_code);
 		 printf("%.8f;\n",Current[i]);
 				Watchdog_Refresh();
     }
