@@ -219,20 +219,24 @@ void FDCAN1_Send_String(uint8_t *msg) {
     while (offset < len) {
 				
 				uint32_t tick = HAL_GetTick();
+				uint32_t wait_spins = 0;
 				while (HAL_FDCAN_GetTxFifoFreeLevel(&FDCAN1_Handler) == 0) {
             // 什么都不做，快速轮询
             // 只能在主循环调用，不能在中断里
-						if (HAL_GetTick() - tick > 10)
+						if ((HAL_GetTick() - tick > 10U) || (++wait_spins > 100000U))
 							{
 									// 超时处理
-									printf("FDCAN TX FIFO FULL!\r\n");
-									break;
+									printf("FDCAN TX FIFO FULL, message dropped.\r\n");
+									return;
 							}
         }
 
         uint8_t send_len = (len - offset > FDCAN_MAX_DATA_LEN) ? FDCAN_MAX_DATA_LEN : (len - offset);
 				uint32_t dlc_value = FDCAN_DLC_BYTES_MAP[send_len];
-        FDCAN1_Send_Msg(msg + offset, dlc_value);
+				if (FDCAN1_Send_Msg(msg + offset, dlc_value) != 0U) {
+					printf("FDCAN enqueue failed, message dropped.\r\n");
+					return;
+				}
 
         offset += send_len;
 				//HAL_Delay(1); //中断调用链中出现硬件延时会卡死！！

@@ -50,6 +50,7 @@ extern u8 aRxBuffer[RXBUFFERSIZE];			 	// HAL库USART接收Buffer
 // 外部函数声明
 //-----------------------------------------------------------------
 extern void uart_init(u32 bound);
+void USART_ProcessPendingCommand(void);
 uint8_t CALIB_CheckCommandAvailable(void);
 char* CALIB_GetCommand(void);
 //-----------------------------------------------------------------

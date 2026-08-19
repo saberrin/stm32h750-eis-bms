@@ -112,6 +112,7 @@ int main(void)
     // Ö÷Ñ­»·
     while (1) {
 
+        USART_ProcessPendingCommand();
         Runtime_BackgroundTask();
 
         switch (g_current_state) {
