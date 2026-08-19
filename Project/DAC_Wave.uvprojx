@@ -339,7 +339,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER, STM32H750xx</Define>
               <Undefine></Undefine>
-              <IncludePath>..\CMSIS\CoreSupport;..\CMSIS\DeviceSupport;..\Project;..\STM32H7xx_HAL_Driver\Inc;..\User\delay;..\User\LED;..\User\KEY;..\User\usart;..\User\LCD;..\User\stm32h7xx_it;..\User\system;..\User\DAC;..\User\TIMER;..\User\Sinex_ware;..\User\ad7606b;..\User\gpio;..\User\FFT;..\STM32H7xx_HAL_Driver\Src;..\User\dac8830;..\User\spi;..\User\W25QXX;..\User\qspi;..\User\NORFLASH;..\User\18b20;..\User\ADS131A04</IncludePath>
+              <IncludePath>..\CMSIS\CoreSupport;..\CMSIS\DeviceSupport;..\Project;..\STM32H7xx_HAL_Driver\Inc;..\User\delay;..\User\LED;..\User\KEY;..\User\usart;..\User\LCD;..\User\stm32h7xx_it;..\User\system;..\User\DAC;..\User\TIMER;..\User\Sinex_ware;..\User\ad7606b;..\User\gpio;..\User\FFT;..\STM32H7xx_HAL_Driver\Src;..\User\dac8830;..\User\spi;..\User\W25QXX;..\User\qspi;..\User\NORFLASH;..\User\18b20;..\User\ADS131A04;..\User\identity_flash;..\User\runtime_flash;..\User\calib_flash</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -632,6 +632,36 @@
               <FileName>SYS_protection.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\SYS_protection.h</FilePath>
+            </File>
+            <File>
+              <FileName>identity_flash.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\identity_flash\identity_flash.c</FilePath>
+            </File>
+            <File>
+              <FileName>identity_flash.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\User\identity_flash\identity_flash.h</FilePath>
+            </File>
+            <File>
+              <FileName>runtime_flash.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\runtime_flash\runtime_flash.c</FilePath>
+            </File>
+            <File>
+              <FileName>runtime_flash.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\User\runtime_flash\runtime_flash.h</FilePath>
+            </File>
+            <File>
+              <FileName>calib_flash.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\calib_flash\calib_flash.c</FilePath>
+            </File>
+            <File>
+              <FileName>calib_flash.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\User\calib_flash\calib_flash.h</FilePath>
             </File>
             <File>
               <FileName>ADS131A04.c</FileName>

@@ -4,7 +4,7 @@
 #include "usart.h"
 #include <stdio.h>
 #include <math.h>
-
+#include "watchdog.h"
 #define ADS_VREF    4.0f
 
 //=====================================================================
@@ -423,46 +423,7 @@ void ADS131A0X_PrintDetailedInfo(void)
 
 
 
-//uint8_t ADS131A0X_Read_Ch1_Ch2(uint16_t *Current, uint16_t *Voltage)
-//{
-//    uint8_t  tx[4] = {0};
-//    uint8_t  rx[4] = {0};
-//    uint32_t raw[4]; 
 
-//    // 等待 DRDY
-//    uint32_t timeout = 100000;
-//    while (READ_DRDY() && timeout--);
-//    if (timeout == 0) return 1; 
-
-//    CS_0();
-//    HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);  // 状态字
-
-//    // CH0
-//    HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
-//    raw[0] = (rx[0] << 16) | (rx[1] << 8) | rx[2];
-
-//    // CH1
-//    HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
-//    raw[1] = (rx[0] << 16) | (rx[1] << 8) | rx[2];
-
-//    // 丢弃 CH2 CH3
-//    HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
-//		
-//		raw[2] = (rx[0] << 16) | (rx[1] << 8) | rx[2];
-//    HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
-//		 raw[3] = (rx[0] << 16) | (rx[1] << 8) | rx[2];
-//		
-//		
-//    CS_1();
-
-//    // ==============================
-//    // 正确方法：右移 8 位，再取 16bit
-//    // ==============================
-//    *Current = (uint16_t)((raw[0] >> 8) & 0xFFFF);
-//    *Voltage = (uint16_t)((raw[3] >> 8) & 0xFFFF);
-
-//    return 0;
-//}
 
 
 
@@ -483,13 +444,16 @@ void ADS131A0X_Read_Ch1_Ch2(uint32_t *Current, uint32_t *Voltage)
 		
     // 跳过CH1
     HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
-    // 跳过CH2
+    
+			*Voltage = (rx[0] << 24) | (rx[1] << 16) | (rx[2] << 8) | rx[3];
+
+		
+		// 跳过CH2
     HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
     // CH3 通道4 → 电压 Voltage
     HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
 
-		*Voltage = (rx[0] << 24) | (rx[1] << 16) | (rx[2] << 8) | rx[3];
-
+	
     CS_1();
 }
 
@@ -584,64 +548,90 @@ uint8_t ADS131A0X_Read_Single_Channel(uint8_t channel, uint16_t *val16)
 
 
 
-float ADS131A0X_Read_Channel(uint8_t channel)
-{
+//float ADS131A0X_Read_Channel(uint8_t channel)
+//{
 //    // 通道合法性校验
 //    if(channel > 3)
 //    {
-//        return 0.0f;
+//        return NAN; // 非法通道返回非数，区分正常0V
 //    }
 
+//    // 单次DRDY等待，仅保留一段，带超时保护
 //    uint32_t timeout = 100000;
-//    while(READ_DRDY() && timeout--);
+//    while(READ_DRDY() && timeout--)
+//    {
+//        Watchdog_Refresh(); // 循环内持续喂狗，防止复位
+//    }
 //    if(timeout == 0)
 //    {
-//        return 0.0f;
+//        printf("ADC读取超时 DRDY无效\r\n");
+//        return NAN; // 超时返回NaN，上层识别故障
 //    }
 
-		while(READ_DRDY());
-		
-		
-    uint8_t tx[4] = {0}, rx[4];
-    uint32_t targetRaw = 0;
+//    uint8_t tx[4] = {0}, rx[4];
+//    uint32_t targetRaw = 0;
+
+//    CS_0();
+//    // 读取状态字（ADS131A04固定时序必须先读）
+//    HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
+//    Watchdog_Refresh();
+
+//    for(int i=0; i<4; i++)
+//    {
+//        HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
+//        // 规范移位，增加括号提升可读性
+//        uint32_t rawBuf = ((uint32_t)rx[0] << 24) | ((uint32_t)rx[1] << 16) | ((uint32_t)rx[2] << 8) | rx[3];
+//        if(i == channel)
+//        {
+//            targetRaw = rawBuf;
+//        }
+//        Watchdog_Refresh(); // 每读一个通道喂一次狗
+//    }
+//    CS_1();
+
+//    // 复用原有24bit转电压函数，逻辑统一无偏差
+//    return CodeToVoltage(targetRaw);
+//}
+
+
+
+//=====================================================================
+// 读取单个通道电压值（0~3）
+// 返回值：电压（V），非法通道返回 NAN
+//=====================================================================
+float ADS131A0X_Read_Channel(uint8_t channel)
+{
+    if (channel > 3)
+        return NAN;
+
+    uint8_t tx[4] = {0};
+    uint8_t rx[4] = {0};
+
+    /* 等待 DRDY 拉低 */
+    uint32_t timeout = 100000;
+    while (READ_DRDY() && timeout--);
+    if (timeout == 0)
+        return NAN;
 
     CS_0();
-    // 读取状态字，和原函数完全一致
+
+    /* 1. 读取状态字（必须读，不能跳过） */
     HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
 
-    for(int i=0; i<4; i++)
+    /* 2. 按顺序读取 4 个通道 */
+    uint32_t raw[4] = {0};
+    for (int i = 0; i < 4; i++)
     {
         HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
-        uint32_t rawBuf = (rx[0]<<24)|(rx[1]<<16)|rx[2]<<8|rx[3];
-        if(i == channel)
-        {
-            targetRaw = rawBuf;
-        }
+        raw[i] = ((uint32_t)rx[0] << 24) |
+                 ((uint32_t)rx[1] << 16) |
+                 ((uint32_t)rx[2] << 8) |
+                  (uint32_t)rx[3];
     }
-//   
 
-//        HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
-//        uint32_t rawBuf = (rx[0]<<24)|(rx[1]<<16)|rx[2]<<8|rx[3];  //  通道1
+    CS_1();
 
-//		        HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
-//       rawBuf = (rx[0]<<24)|(rx[1]<<16)|rx[2]<<8|rx[3];  //  通道2
-//		
-//		        HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
-//        rawBuf = (rx[0]<<24)|(rx[1]<<16)|rx[2]<<8|rx[3];  //  通道3
-//		
-//		
-//		        HAL_SPI_TransmitReceive(&hspi1, tx, rx, 4, 10);
-//        rawBuf = (rx[0]<<24)|(rx[1]<<16)|rx[2]<<8|rx[3];  //  通道4
-//		
-//		
-
-		CS_1();
-
-    // 复用你原装CodeToVoltage换算逻辑
-    return CodeToVoltage(targetRaw);
+    /* 3. 只转换目标通道 */
+    return CodeToVoltage(raw[channel]);
 }
-
-
-
-
 

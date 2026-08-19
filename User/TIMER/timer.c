@@ -23,6 +23,7 @@
 //-----------------------------------------------------------------
 
 TIM_HandleTypeDef TIM6_Handler;      // 定时器6句柄 
+TIM_HandleTypeDef TIM7_Handler;      // 功能层运行时间统计，独立于EIS TIM6
 
 //-----------------------------------------------------------------
 // vvoid TIM6_Init(u16 arr,u16 psc)
@@ -60,6 +61,19 @@ void TIM6_Init(u16 arr,u16 psc)
   HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);             // ??TIM6????
 }
 
+void TIM7_Init(u16 arr, u16 psc)
+{
+    TIM7_Handler.Instance = TIM7;
+    TIM7_Handler.Init.Prescaler = psc;
+    TIM7_Handler.Init.CounterMode = TIM_COUNTERMODE_UP;
+    TIM7_Handler.Init.Period = arr;
+    TIM7_Handler.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    HAL_TIM_Base_Init(&TIM7_Handler);
+    HAL_TIM_Base_Start_IT(&TIM7_Handler);
+    HAL_NVIC_SetPriority(TIM7_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(TIM7_IRQn);
+}
+
 //-----------------------------------------------------------------
 // void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 //-----------------------------------------------------------------
@@ -76,6 +90,10 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 	{
 		__HAL_RCC_TIM6_CLK_ENABLE();            // 使能TIM6时钟
 	}
+  else if(htim->Instance==TIM7)
+  {
+      __HAL_RCC_TIM7_CLK_ENABLE();
+  }
 }
 
 //-----------------------------------------------------------------

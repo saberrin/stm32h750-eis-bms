@@ -3,9 +3,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-
-
-
+#include "delay.h"
+#include "ADS131A04.h"
 
 // 参数读取函数
 float read_battery_current(void);
@@ -17,5 +16,8 @@ float read_power_supply_voltage(void);
 float read_ambient_temperature(void);
 
 void protection_check(void);
+uint8_t CheckCellVoltage(uint8_t cell_index);
+
+
 
 #endif // SYS_PROTECTION_H

@@ -19,7 +19,7 @@ static void GPIO_Output_Init(GPIO_TypeDef* port, uint16_t pin) {
 
 // Enable or disable all 4514 (E low = enable)
 static inline void S_All_Enable(void) {
-	
+
 //    HAL_GPIO_WritePin(S1_E_PORT, S1_E_PIN, GPIO_PIN_RESET);
 //    HAL_GPIO_WritePin(S2_E_PORT, S2_E_PIN, GPIO_PIN_RESET);
 //    HAL_GPIO_WritePin(S3_E_PORT, S3_E_PIN, GPIO_PIN_RESET);
@@ -29,13 +29,13 @@ static inline void S_All_Enable(void) {
 
 static inline void S_All_Disable(void) {
 
-	
+
 //    HAL_GPIO_WritePin(S1_E_PORT, S1_E_PIN, GPIO_PIN_SET);
 //    HAL_GPIO_WritePin(S2_E_PORT, S2_E_PIN, GPIO_PIN_SET);
 //    HAL_GPIO_WritePin(S3_E_PORT, S3_E_PIN, GPIO_PIN_SET);
 //    HAL_GPIO_WritePin(S4_E_PORT, S4_E_PIN, GPIO_PIN_SET);
 			HAL_GPIO_WritePin(HC4514_ENABLE_PORT, HC4514_ENABLE_PIN, GPIO_PIN_SET);
-			
+
 }
 
 // Drive shared S-A[3:0] bus
@@ -80,7 +80,7 @@ static inline void Map_B_to_S(uint8_t Bk, SwitchGroup_t *g_out, uint8_t *ch_out)
 //static inline void X_Set_ByStep(uint8_t s) {
 //		/* 计算右移次数 */
 //    uint8_t shift = (uint8_t)((51u - s) & 0x03u);
-//	
+//
 //    for (uint8_t i = 0; i < 4; ++i) {
 //        uint8_t val = (uint8_t)((i + 4 - (shift & 0x3u)) & 0x3u);
 //        DecoderGroup_t xg = (DecoderGroup_t)(DECODER_X1 + i);
@@ -91,6 +91,23 @@ static inline void Map_B_to_S(uint8_t Bk, SwitchGroup_t *g_out, uint8_t *ch_out)
 
 static inline void X_Set_ByStep(uint8_t s)
 {
+    if (s == 1u)
+    {
+        Decoder_Select_2to4(DECODER_X1, 1u);
+        Decoder_Select_2to4(DECODER_X2, 3u);
+        Decoder_Select_2to4(DECODER_X3, 0u);
+        Decoder_Select_2to4(DECODER_X4, 0u);
+        return;
+    }
+
+    if (s == 52u)
+    {
+        Decoder_Select_2to4(DECODER_X1, 0u);
+        Decoder_Select_2to4(DECODER_X2, 0u);
+        Decoder_Select_2to4(DECODER_X3, 1u);
+        Decoder_Select_2to4(DECODER_X4, 3u);
+        return;
+    }
     /* 目标关系：
        s=2: X1-1 X2-2 X3-3 X4-0, 2号电芯
        s=3: X1-0 X2-1 X3-2 X4-3
@@ -113,7 +130,7 @@ static inline void X_Set_ByStep(uint8_t s)
 //void SwitchWindow_Program(uint8_t s) {
 ////    HAL_GPIO_WritePin(S1_PORT, S1_PIN, GPIO_PIN_SET);
 ////    HAL_GPIO_WritePin(S2_PORT, S2_PIN, GPIO_PIN_SET);
-//	
+//
 //		// Keep LE low by default
 //    HAL_GPIO_WritePin(S1_LE_PORT, S1_LE_PIN, GPIO_PIN_RESET);
 //    HAL_GPIO_WritePin(S2_LE_PORT, S2_LE_PIN, GPIO_PIN_RESET);
@@ -145,10 +162,51 @@ void SwitchWindow_Program(uint8_t s)
 		S_All_Disable();       // 禁止所有 4514 译码器
 		HAL_GPIO_WritePin(HC74139_ENABLE_PORT, HC74139_ENABLE_PIN, GPIO_PIN_SET);       // 禁止所有 139 译码器
 		delay_ms(500);
-    // ---------- 特例：s=1 或 s=52 保留，不做任何切换 ----------
-    if (s == 1 || s == 52)
+    // ---------- s=1: B0,B0,B1,B3 ----------
+    if (s == 1)
     {
-        printf("SwitchWindow_Program: s=%d (special case, no change)\r\n", s);
+        const uint8_t target_b[4] = {0u, 0u, 1u, 3u};
+
+        HAL_GPIO_WritePin(S1_LE_PORT, S1_LE_PIN, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(S2_LE_PORT, S2_LE_PIN, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(S3_LE_PORT, S3_LE_PIN, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(S4_LE_PORT, S4_LE_PIN, GPIO_PIN_RESET);
+        S_All_Enable();
+
+        for (uint8_t j = 0; j < 4; ++j)
+        {
+            SwitchGroup_t group;
+            uint8_t channel;
+            Map_B_to_S(target_b[j], &group, &channel);
+            S_SetAddrBus(channel);
+            S_Latch(group);
+        }
+
+        X_Set_ByStep(s);
+        return;
+    }
+
+    // ---------- s=52: B52,B52,B51,B49 ----------
+    if (s == 52)
+    {
+        const uint8_t target_b[4] = {52u, 52u, 51u, 49u};
+
+        HAL_GPIO_WritePin(S1_LE_PORT, S1_LE_PIN, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(S2_LE_PORT, S2_LE_PIN, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(S3_LE_PORT, S3_LE_PIN, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(S4_LE_PORT, S4_LE_PIN, GPIO_PIN_RESET);
+        S_All_Enable();
+
+        for (uint8_t j = 0; j < 4; ++j)
+        {
+            SwitchGroup_t group;
+            uint8_t channel;
+            Map_B_to_S(target_b[j], &group, &channel);
+            S_SetAddrBus(channel);
+            S_Latch(group);
+        }
+
+        X_Set_ByStep(s);
         return;
     }
 
@@ -209,7 +267,7 @@ void SwitchWindow_Program(uint8_t s)
 void SwitchWindow_Program_Test(uint8_t s) {
 //    HAL_GPIO_WritePin(S1_PORT, S1_PIN, GPIO_PIN_SET);
 //    HAL_GPIO_WritePin(S2_PORT, S2_PIN, GPIO_PIN_SET);
-	
+
 		// Keep LE low by default
     HAL_GPIO_WritePin(S1_LE_PORT, S1_LE_PIN, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(S2_LE_PORT, S2_LE_PIN, GPIO_PIN_RESET);
@@ -219,25 +277,25 @@ void SwitchWindow_Program_Test(uint8_t s) {
     // Enable all 4514 before programming
     S_All_Enable();
 
-	
+
 		SwitchGroup_t g; uint8_t ch;
-	
+
 		g = SWITCH_GROUP_S1;
 		ch = 0;
 		Decoder_Select_4to16(g, ch);
-	
+
 		g = SWITCH_GROUP_S2;
 		ch = 0;
 		Decoder_Select_4to16(g, ch);
-		
+
 		g = SWITCH_GROUP_S3;
 		ch = 0;
 		Decoder_Select_4to16(g, ch);
-		
+
 		g = SWITCH_GROUP_S4;
 		ch = 0;
 		Decoder_Select_4to16(g, ch);
-		
+
     // Set X decoders with rotate-right pattern
     X_Set_ByStep(s);
 
@@ -297,11 +355,11 @@ void SwitchMatrix_Init(void) {
 		__HAL_RCC_GPIOB_CLK_ENABLE();
 		__HAL_RCC_GPIOE_CLK_ENABLE();
 		__HAL_RCC_GPIOD_CLK_ENABLE();
-		
+
 		// S1,S2 bus
 //		GPIO_Output_Init(S1_PORT, S1_PIN);
 //    GPIO_Output_Init(S2_PORT, S2_PIN);
-	
+
     // S_A bus
     GPIO_Output_Init(S_A0_PORT, S_A0_PIN);
     GPIO_Output_Init(S_A1_PORT, S_A1_PIN);
@@ -339,7 +397,7 @@ void SwitchMatrix_Init(void) {
     GPIO_Output_Init(X4_A0_PORT, X4_A0_PIN);
     GPIO_Output_Init(X4_A1_PORT, X4_A1_PIN);
     GPIO_Output_Init(HC74139_ENABLE_PORT, HC74139_ENABLE_PIN);
-		
+
     // Default levels
     HAL_GPIO_WritePin(S_A0_PORT, S_A0_PIN, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(S_A1_PORT, S_A1_PIN, GPIO_PIN_RESET);
@@ -366,7 +424,7 @@ void SwitchMatrix_Init(void) {
     HAL_GPIO_WritePin(X3_A1_PORT, X3_A1_PIN, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(X4_A0_PORT, X4_A0_PIN, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(X4_A1_PORT, X4_A1_PIN, GPIO_PIN_RESET);
-		
+
 
 }
 

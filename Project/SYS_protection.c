@@ -4,7 +4,7 @@
 #include "ds18b20.h"
 #include "AD7606.h"
 #include "global_command.h"
-
+#include "MOS_Controller.h"
 
 
 // 电池状态
@@ -166,6 +166,149 @@ float read_ambient_temperature(void)
     // 读取环境温度[1,6](@ref)
     return ds18b20_get_temperature_float(); 
 }
+
+
+
+/**
+ * @brief 双重电压检测 - 检查CH3电压是否正常
+ * @param cell_index 当前电芯编号（仅用于打印提示）
+ * @return uint8_t 0=电压正常，1=电压异常（需跳过当前电芯）
+ */
+uint8_t CheckCellVoltage(uint8_t cell_index)
+{
+   
+
+
+
+//	float voltage_check = ADS131A0X_Read_Channel(1);
+//    
+//    /* 第一次检测正常，直接返回 */
+//    if (voltage_check >= 3.0f)
+//        return 0;
+//    
+//    /* 第一次检测异常，延迟后再次确认 */
+//    delay_ms(10);
+//    voltage_check = ADS131A0X_Read_Channel(1);
+//    
+//    /* 第二次恢复正常，认为是干扰，继续执行 */
+//    if (voltage_check >= 3.0f)
+//        return 0;
+//    
+//		
+//    /* 两次都低于3.0V，确认真实欠压 */
+//    printf("Cell %d voltage too low (%.3f V)! EIS will skip this battery\r\n", cell_index, voltage_check);
+//    return 1;
+			return 0;
+}
+
+
+///**
+// * @brief 检测指定电池及其相邻电池的电压是否正常
+// * @param cell_index 电池编号（范围 1~52）
+// * @return uint8_t 0=正常，1=异常（当前电池或相邻电池存在欠压/过压）
+// */
+//uint8_t CheckCellVoltage(uint8_t cell_index)
+//{
+//    float voltage;
+//    uint8_t result = 0;
+//    uint8_t neighbor_idx[2];  // 存储相邻电池编号
+//    uint8_t neighbor_count = 0;
+//    uint8_t i;
+
+//    // ========== 确定相邻电池列表 ==========
+//    if (cell_index == 1)
+//    {
+//        neighbor_idx[0] = 2;
+//        neighbor_idx[1] = 3;
+//        neighbor_count = 2;
+//    }
+//    else if (cell_index == 52)
+//    {
+//        neighbor_idx[0] = 50;
+//        neighbor_idx[1] = 51;
+//        neighbor_count = 2;
+//     }
+//    else
+//    {
+//        neighbor_idx[0] = cell_index - 1;
+//        neighbor_idx[1] = cell_index + 1;
+//        neighbor_count = 2;
+//    }
+
+//    // ========== 第一步：检测当前电池（无需切换） ==========
+//    // 此时继电器已在 cell_index 位置
+//    delay_ms(5);  // 确保采样稳定
+
+//    voltage = ADS131A0X_Read_Channel(3);
+
+//    /* 第一次检测正常 */
+//    if (voltage >= 3.0f && voltage <= 3.4f)
+//    {
+//        ; // 正常
+//    }
+//    else
+//    {
+//        /* 第一次检测异常，延迟后再次确认 */
+//        delay_ms(10);
+//        voltage = ADS131A0X_Read_Channel(3);
+
+//        /* 第二次恢复正常，认为是干扰 */
+//        if (voltage >= 3.0f && voltage <= 3.4f)
+//        {
+//            ; // 正常
+//        }
+//        else
+//        {
+//            /* 两次都异常，确认真实故障 */
+//            if (voltage < 3.0f)
+//                printf("Cell %d voltage too low (%.3f V)! EIS will skip this battery\r\n", cell_index, voltage);
+//            else if (voltage > 3.4f)
+//                printf("Cell %d voltage too high (%.3f V)! Overvoltage warning!\r\n", cell_index, voltage);
+
+//            result = 1;
+//        }
+//    }
+
+//    // ========== 第二步：检测相邻电池 ==========
+//    for (i = 0; i < neighbor_count; i++)
+//    {
+//        // 切换到相邻电池
+//        SwitchWindow_Program(neighbor_idx[i]);
+//        delay_ms(5);
+
+//        voltage = ADS131A0X_Read_Channel(3);
+
+//        /* 第一次检测正常 */
+//        if (voltage >= 3.0f && voltage <= 3.4f)
+//        {
+//            continue;
+//        }
+
+//        /* 第一次检测异常，延迟后再次确认 */
+//        delay_ms(10);
+//        voltage = ADS131A0X_Read_Channel(3);
+
+//        /* 第二次恢复正常，认为是干扰 */
+//        if (voltage >= 3.0f && voltage <= 3.4f)
+//        {
+//            continue;
+//        }
+
+//        /* 两次都异常，确认真实故障 */
+//        if (voltage < 3.0f)
+//            printf("Cell %d voltage too low (%.3f V)! EIS will skip this battery\r\n", neighbor_idx[i], voltage);
+//        else if (voltage > 3.4f)
+//            printf("Cell %d voltage too high (%.3f V)! Overvoltage warning!\r\n", neighbor_idx[i], voltage);
+
+//        result = 1;
+//    }
+
+//    // ========== 第三步：恢复当前电池通道 ==========
+//    SwitchWindow_Program(cell_index);
+
+//    return result;
+//}
+
 
 
 

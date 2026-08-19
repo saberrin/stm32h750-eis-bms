@@ -23,11 +23,11 @@
 #include <stdint.h>
 //-----------------------------------------------------------------
 #define TIME_CLK 200000000
-//#define PI 3.14159265358979323846
+
 #define PI 3.14159265f
 volatile uint16_t SIN_DATA =210; // 单周期内采样点数
 volatile uint16_t cycle_count = 0; // 
-volatile uint8_t Num_period = 10; // 周期数目                 
+volatile uint8_t Num_period = 20; // 周期数目                 
 volatile uint16_t Num_Sampling_Points = 0; // ??????
 volatile float Relative_Amplitude = 0.5;// 设置幅值大小
 volatile uint8_t ADC_status = 1; // ADC状态设置
@@ -72,11 +72,6 @@ static float SignedCodeToVoltage(int32_t code)
     return (float)code / 8388608.0f * ADS_VREF;
 }
 
-static float CodeToVoltage(uint32_t raw)
-{
-    return SignedCodeToVoltage(RawToSignedCode(raw));
-}
-
 
 
 
@@ -111,12 +106,23 @@ void set_excitation_current(float current)
 
 
 
-// 采样率切换台阶补偿：用切换后静态基线均值估计ADC数字滤波器档位带来的偏移
-static int32_t last_baseline_volt_code = 0;
-static int32_t last_baseline_curr_code = 0;
+// 采样率切换台阶补偿：把每个采样率档位的静态基线拉回首次测量基准
+static int32_t reference_baseline_volt_code = 0;
+static int32_t reference_baseline_curr_code = 0;
+
 static int32_t delta_volt_code = 0;
 static int32_t delta_curr_code = 0;
 static uint8_t first_measure_flag = 1;
+
+static void Reset_ADCRateStepCompensation(void)
+{
+    reference_baseline_volt_code = 0;
+    reference_baseline_curr_code = 0;
+
+    delta_volt_code = 0;
+    delta_curr_code = 0;
+    first_measure_flag = 1;
+}
 
 
 
@@ -165,19 +171,48 @@ void Auto_Set_ADC_SampleRate(double Freq)
     if (Freq < 0.01)
         Freq = 0.01;
 
-    if (Freq > 10000.0)
-        target_sps = 125000U;
-    else if (Freq > 5000.0)
-        target_sps = 31250U;
-    else if (Freq > 1000.0)
-        target_sps = 15625U;
-    else if (Freq > 100.0)
-        target_sps = 3906U;
-    else if (Freq > 30.0)
-        target_sps = 488U;
-    else
-        target_sps = 61U;
+		
+		
+	//////////////////////////314大电芯/////////////////////////////////////////	
+    if (Freq > 2000.0)
+      target_sps = 125000U;
+		
+	//	  target_sps = 31250U;
+//    else if (Freq > 5000.0)
+//        target_sps = 31250U;
+//    else if (Freq > 1000.0)
+//        target_sps = 15625U;
+//    else if (Freq > 100.0)
+//        target_sps = 3906U;
+//    else if (Freq > 30.0)
+//        target_sps = 488U;
+//    else
+//        target_sps = 61U;
+//			if (Freq >= 1000.0)
+//        target_sps = 125000U;
+//			else if (Freq > 100.0)
+//        target_sps = 15625U;
+//			else if (Freq > 10.0)
+//        target_sps = 3906U;
+			else
+				target_sps = 3906U;
+/////////////////////////////////////////////////////////////////////////////////
+			
+			
+			
+	//////////////////////////18650大电芯/////////////////////////////////////////	
 
+		//		target_sps = 31250U;
+/////////////////////////////////////////////////////////////////////////////////			
+			
+			
+			
+			
+			
+			
+			
+			
+			
     ADS131A0X_ChangeSampleRate_NoReset(target_sps);
 
     // 动态丢弃收敛点
@@ -212,22 +247,25 @@ void Auto_Set_ADC_SampleRate(double Freq)
 
     if(first_measure_flag == 1)
     {
+        reference_baseline_volt_code = avg_v_code;
+        reference_baseline_curr_code = avg_i_code;
         delta_volt_code = 0;
         delta_curr_code = 0;
         first_measure_flag = 0;
     }
     else
     {
-        delta_volt_code = avg_v_code - last_baseline_volt_code;
-        delta_curr_code = avg_i_code - last_baseline_curr_code;
+        delta_volt_code = avg_v_code - reference_baseline_volt_code;
+        delta_curr_code = avg_i_code - reference_baseline_curr_code;
     }
 
-    last_baseline_volt_code = avg_v_code;
-    last_baseline_curr_code = avg_i_code;
 
-    printf("ADC采样率切换: Freq=%.6fHz, SPS=%lu, V_step=%.6fmV, I_step=%.6fmV\r\n",
+
+    printf("ADC采样率切换: Freq=%.6fHz, SPS=%lu, V_base=%.6fmV, V_ref=%.6fmV, V_comp=%.6fmV, I_comp=%.6fmV\r\n",
            Freq,
            (unsigned long)target_sps,
+           SignedCodeToVoltage(avg_v_code) * 1000.0f,
+           SignedCodeToVoltage(reference_baseline_volt_code) * 1000.0f,
            SignedCodeToVoltage(delta_volt_code) * 1000.0f,
            SignedCodeToVoltage(delta_curr_code) * 1000.0f);
 }
@@ -242,34 +280,19 @@ void Auto_Set_ADC_SampleRate(double Freq)
 void EIS_SingleFrequency_Measure(double Freq)
 {
    
-Power5200_Enable();
-	// 参数校验
-    if (Freq <= 0.0) {
-        printf("错误：测量频率必须大于0 (当前值: %.6f Hz)\r\n", Freq);
-        return;
-    }
 
-    // 1. 硬件初始化与配置
+
+
+    Reset_ADCRateStepCompensation();
     HAL_Delay(100); // 确保开关矩阵稳定
-    
-    AD620_GainCtrl_Init();
-    AD620_SetGainByValue(2);
-//    AD7606_SetRange(AD7606_RANGE_10V);
-    calibrateBias(); // 校准偏置电压
-
-    // 2. 信号生成系统初始化
-    HAL_Delay(1000); // 确保硬件完全就绪
     GenerateSineWave(Sine_data, 1.0f * Relative_Amplitude / 8.0f, 0.5f);
     DAC_Init(Sine_data);
 
-    // 3. 执行单频测量
-           
-        // 调用核心测量函数
         single_measure(Freq);               
-      Power5200_Disable();
 				HAL_Delay(10);
 				
-        
+   
+
 }
     
 
@@ -284,19 +307,10 @@ Power5200_Enable();
 void EIS_FrequencySweep_Measure(double Freq_Start, double Freq_End)
 {
     
-	Power5200_Enable();
+
    
+    Reset_ADCRateStepCompensation();
     
-    AD620_GainCtrl_Init();
-    AD620_SetGainByValue(500);
-
-	 HAL_Delay(500);
-//   calibrateBias();
-   RELAY_Enable();
-delay_ms(1000);
-
-RELAY_Disable(); 
-    // 2. 计算频率点序列
     Period_Count = QG_EIS_FREQ_POINTS;
     double num_decades = log10(Freq_Start / Freq_End);
     
@@ -315,16 +329,14 @@ RELAY_Disable();
     generate_frequency_points(Freq_Points, Freq_Start, Freq_End, 
                            Period_Count, num_decades, total_points);
     
-    // 3. 信号生成系统初始化
-    HAL_Delay(1000);
+
     GenerateSineWave(Sine_data, 1.0f * Relative_Amplitude / 8.0f, 0.5f);
     DAC_Init(Sine_data);
     
-    // 4. 执行扫频测量
+
 
         sweep_measure(Freq_Points, total_points);
-        Power5200_Disable();
-				HAL_Delay(10);
+			
 }
 
 
@@ -332,99 +344,89 @@ RELAY_Disable();
 
 
 void single_measure(double Freq){
-		Watchdog_Refresh();
-		
-	
-
-	
-	
-	   Auto_Set_ADC_SampleRate( Freq);
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	 Power5200_Enable();	
-		Num_period = 20;
-
-		
-	static	uint32_t Voltage_data[256*20] = {0};  // 所有元素自动初始化为 0
-	static	uint32_t Current_data[256*20] = {0};  // 所有元素自动初始化为 0
-	static	float Voltage[256*20] = {0};  // 所有元素自动初始化为 0
-	static	float Current[256*20] = {0};  // 所有元素自动初始化为 0
+		Watchdog_Refresh();		
+	  Auto_Set_ADC_SampleRate( Freq);
+	  Power5200_Enable();	
+	  LED_Green_On();
+		static	uint32_t Voltage_data[256*20] = {0};  // 所有元素自动初始化为 0
+		static	uint32_t Current_data[256*20] = {0};  // 所有元素自动初始化为 0
+		static	float Voltage[256*20] = {0};  // 所有元素自动初始化为 0
+		static	float Current[256*20] = {0};  // 所有元素自动初始化为 0
 		memset(Voltage_data,0,sizeof(Voltage_data));
-memset(Current_data,0,sizeof(Current_data));
-memset(Voltage,0,sizeof(Voltage));
-memset(Current,0,sizeof(Current));
+		memset(Current_data,0,sizeof(Current_data));
+		memset(Voltage,0,sizeof(Voltage));
+		memset(Current,0,sizeof(Current));
 		ADC_status = 1;
 		cycle_count = 0;
 		Sampling_Count = 0;
 		Num_Sampling_Points = SIN_DATA * Num_period;
 		uint16_t Freq_Prescaler_initial = (int)3-log10(Freq);
 		double Freq_Prescaler = pow(10,Freq_Prescaler_initial)-1;
+
+		
+		 Watchdog_Refresh();	
+//		    /* ========== 提前丢弃前N个不稳定点 ========== */
+//   uint32_t pre_discard = 0;
+
+//		 uint32_t tmp_c, tmp_v;
 		
 		TIM6_Init(TIME_CLK/SIN_DATA/Freq/pow(10,Freq_Prescaler_initial),(uint16_t ) Freq_Prescaler);	// 重新设定重转载值
-		HAL_TIM_Base_Start_IT(&TIM6_Handler); // 开启中断
-		Restart_DAC_Wave(Sine_data,SIN_DATA);  // 重启DAC
+	
+ 
 
-		while (ADC_status == 1){
-			if(ADC_Start_Standard == 1) {
-				Watchdog_Refresh();			
-    //   AD7606_StartConvst();
-		//		AD7606_ReadData_2Ch(&Current_data[Sampling_Count],&Voltage_data[Sampling_Count]);
-        ADS131A0X_Read_Ch1_Ch2(&Current_data[Sampling_Count],&Voltage_data[Sampling_Count]);
+
+HAL_TIM_Base_Start_IT(&TIM6_Handler); // 开启中断
 		
-				
-	//		Voltage[Sampling_Count] =	ADS131A0X_Read_Channel(3);
-	//		Current[Sampling_Count]=ADS131A0X_Read_Channel(0);
-				ADC_Start_Standard = 0;  // 置为0不采集信号
-				Sampling_Count++;
+
+		
+		Restart_DAC_Wave(Sine_data,SIN_DATA);  // 重启DAC
+	 
+//		    while (pre_discard < 5) {
+//        
+//           
+//            ADS131A0X_Read_Ch1_Ch2(&tmp_c, &tmp_v); 
+//            pre_discard++;
+//       
+//    }
+
+
+// ADS131A0X_Read_Ch1_Ch2(&tmp_c, &tmp_v);
+//  ADS131A0X_Read_Ch1_Ch2(&tmp_c, &tmp_v);
+
+
+while (ADC_status == 1){
+			if(ADC_Start_Standard == 1) {					
+      ADS131A0X_Read_Ch1_Ch2(&Current_data[Sampling_Count],&Voltage_data[Sampling_Count]);
+			ADC_Start_Standard = 0;  // 置为0不采集信号
+			Sampling_Count++;
 			}
 						
-		//	   LED_Green_Toggle();
 		}
-   Power5200_Disable();
-
-	 printf("Voltage:\n");
-	 for (int i = 0; i < Sampling_Count; i++) {
-	//	Voltage[i] =	 -1*AD7606B_Digital2Voltage(Voltage_data[i]);	//已经校准好，单位V	
-   //   Voltage[i]=-1.0*Voltage_data[i]/1000.0;
-		 
-	int32_t real_v_code = RawToSignedCode(Voltage_data[i]) - delta_volt_code;
+   
 		
-       Voltage[i] = -1.0f * SignedCodeToVoltage(real_v_code);
-//		 Voltage[i]=-1*CodeToVoltage(Voltage_data[i]);
-		 
-		 
-		 
-		 printf("%.8f;\n", Voltage[i]/1000);
+				Power5200_Disable();
+				LED_Green_Off();
+				printf("Voltage:\n");
+				for (int i = 0; i < Sampling_Count; i++) {
+				int32_t real_v_code = RawToSignedCode(Voltage_data[i]) - delta_volt_code;
+				Voltage[i] = -1.0f * SignedCodeToVoltage(real_v_code);
+				printf("%.8f;\n", Voltage[i]/(-1000));
 				Watchdog_Refresh();
     }
 	 printf("\r\n");		
 		
 	 printf("Current:\n");
 	 for (int i = 0; i < Sampling_Count; i++) {
-		//		Current[i] =	2* AD7606B_Digital2Voltage(Current_data[i])-5;	//已经校准好，单位A
- //    Current[i] =2.0*Current_data[i]/1000.0-5.0;
-    int32_t real_i_code = RawToSignedCode(Current_data[i]) - delta_curr_code;
-    Current[i] = SignedCodeToVoltage(real_i_code);
+
+    int32_t real_i_code = RawToSignedCode(Current_data[i]);
+ //  Current[i] = 2.0*SignedCodeToVoltage(real_i_code)-5.0;
+		 Current[i] = 1.54f*SignedCodeToVoltage(real_i_code)-3.85f;		 
 		 printf("%.8f;\n",Current[i]);
 				Watchdog_Refresh();
     }
 	 	printf("\r\n");
-		HAL_Delay(1);
-		
-		
-		
-		
-		
-		
+
+			
 		
 		
 			//////////////////相关检测	
@@ -448,8 +450,7 @@ memset(Current,0,sizeof(Current));
     } else {
         printf("电压处理结果: magnitude=%.6f, phase=%.6f rad\r\n", Voltage_magnitude, Voltage_phase_rad);
     }
-//    free(Current);
-//    free(Voltage);
+
     
     printf("\n=== 相关检测算法结束 ===\r\n");
 		
@@ -514,12 +515,6 @@ memset(Current,0,sizeof(Current));
 
 
 
-
-
-
-
-
-
 		HAL_Delay(1);
 		eis_batch_buffer[batch_count].real_impedance = R;
 		eis_batch_buffer[batch_count].imag_impedance = X;
@@ -530,8 +525,7 @@ memset(Current,0,sizeof(Current));
 		char line_buffer[256];
     snprintf(line_buffer, sizeof(line_buffer), "0x%X_B_SWF_Freq%.4frea%.4fimage%.4f_end\r\n",QG_ID,Freq, R, X);
     FDCAN1_Send_String((uint8_t *)line_buffer);	
-		
-		
+				
 	
 }
 
@@ -540,16 +534,13 @@ void sweep_measure(double* Freq_Points, int total_points){
 	double Freq;	
 	resume_index = 0;
 	
-	Power5200_Enable();	
-
 	for (int i = resume_index; i < total_points; i++) {		
 		
 		Freq = Freq_Points[i]; 
-		//输出测试频率
 		printf(" Freq %.5f\n", Freq);		
 		single_measure(Freq);
 	}
-	Power5200_Disable();	
+
 }
 
 
@@ -602,6 +593,7 @@ void Send_EIS_Result() {
 		printf("_EIS_data_packet_end\r\n");
 }
 
+#if 0 /* CAN transport is provided by the imported EIS_CORE fdcan.c */
 #define FDCAN_MAX_DATA_LEN 8
 const uint32_t FDCAN_DLC_BYTES_MAP[9] = {
     FDCAN_DLC_BYTES_0,
@@ -626,6 +618,7 @@ void FDCAN1_Send_String(uint8_t *msg) {
         HAL_Delay(1);  
     }
 }
+#endif
 
 
 

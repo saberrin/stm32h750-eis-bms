@@ -19,6 +19,8 @@
 u8 FDCAN1_Mode_Init(u16 presc,u8 ntsjw,u16 ntsg1,u8 ntsg2,u32 mode);
 u8 FDCAN1_Send_Msg(u8* msg,u32 len);
 u8 FDCAN1_Receive_Msg(u8 *buf);
+void FDCAN1_Send_String(uint8_t *msg);
+void Send_Line(const char *fmt, ...);
 
 extern FDCAN_HandleTypeDef FDCAN1_Handler;
 extern FDCAN_RxHeaderTypeDef FDCAN1_RxHeader;

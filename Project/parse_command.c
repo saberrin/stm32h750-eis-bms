@@ -3,13 +3,27 @@
 #include <math.h>
 #include <ctype.h>
 #include "SYS_protection.h"
+#include "identity_flash.h"
+#include "runtime_flash.h"
+#include "fdcan.h"
+#include "EIS_Measure.h"
 
  uint8_t TerminalAddr = 0;          // 终端地址
- char CommandCode[16] = {0};       // 命令码缓冲区     
+ char CommandCode[32] = {0};       // 命令码缓冲区     
 
  
  uint8_t ParseStatus = 0;          // 解析状态：0-成功，1-格式错误，2-校验错误
 
+// 系统状态字符串映射
+const char *SystemStateStr[] = {
+    "READY",
+    "FAULT",
+    "WARNING",
+    "EIS_SWEEP",
+    "EIS_SINGLE",
+    "GITT_MEASURE",
+    "CALIBRATION"
+};
 
 // 辅助函数：去除字符串首尾空格
 void trim(char* str) {
@@ -35,9 +49,6 @@ void trim(char* str) {
         memmove(str, start, end - start + 2);
     }
 }
-
-
-
 
 
 
@@ -160,7 +171,7 @@ void ParseReceivedData(char* command)
         printf("错误: 命令码长度无效\r\n");
         return;
     }
-    
+
     volatile_strncpy(CommandCode, first_comma + 1, cmd_len);
     CommandCode[cmd_len] = '\0';
     volatile_trim(CommandCode);
@@ -234,7 +245,7 @@ void ParseReceivedData(char* command)
                 return;
             }
             
-            CommandParam1 = temp_value;
+            CommandParam1 = temp_value; 
         } else {
             CommandParam1 = 0.0;  // 参数为空，默认为 0.0
         }
@@ -351,6 +362,9 @@ typedef enum {
     CMD_RESUME,
     CMD_ABORT,
 		CMD_CALIBRATE,
+		CMD_IDRST,
+		CMD_RTRST,
+    CMD_ERASE_ALL_FLASH, 
     CMD_UNKNOWN // 未知命令标识
 } CommandEnum;
 
@@ -387,12 +401,34 @@ CommandEnum getCommandEnum(const char* cmdCode) {
     else if (strcmp(cmdCode, "RESUME") == 0) return CMD_RESUME;
     else if (strcmp(cmdCode, "ABORT") == 0) return CMD_ABORT;
 		else if (strcmp(cmdCode, "CALIBRATE") == 0) return CMD_CALIBRATE;
-		
+		else if (strcmp(cmdCode, "IDRST") == 0) return CMD_IDRST;
+		else if (strcmp(cmdCode, "RTRST") == 0) return CMD_RTRST;
+		else if (strcmp(cmdCode, "ERASEALL") == 0) return CMD_ERASE_ALL_FLASH;
+
     else return CMD_UNKNOWN; // 未知命令
 }
 
 
+//所有返回的命令调用该函数统一输出格式
+void Cmd_SendResp(const char *cmd, const char *cmd_stat, const char *data)
+{
+    char line_buffer[128];
 
+    snprintf(line_buffer, sizeof(line_buffer),
+             ">0x%02X, %s, %.6f, %.6f, %s, %s<\r\n",
+             QG_ID,
+             cmd,
+						 CommandParam1,
+						 CommandParam2,
+						 cmd_stat,
+             data);
+
+    /* UART */
+    printf("%s", line_buffer);
+
+    /* CAN */
+    FDCAN1_Send_String((uint8_t *)line_buffer);
+}
 
 //-----------------------------------------------------------------
 // CommandExecStatus ExecuteCommand(char* input)
@@ -422,30 +458,32 @@ CommandExecStatus ExecuteCommand(char* input)
 		//使用switch-case根据枚举值执行不同分支[1,3,4]
    switch (cmdEnum) {
         case CMD_STAT:
-            printf("执行STAT命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写获取系统状态的具体逻辑
-            return CMD_EXEC_SUCCESS;
+					{
+							const char *state_str = "";
+							state_str = SystemStateStr[g_current_state];
+							Cmd_SendResp("STAT", "CMD_OK", state_str);
+							return CMD_EXEC_SUCCESS;
+					}
 
-        case CMD_GETID:
-            printf("执行GETID命令\n");
-            // 在这里直接编写获取设备ID的逻辑
-            return CMD_EXEC_SUCCESS;
+				/* ===================== 信息读取 ===================== */
+				case CMD_GETID:
+						IdFlash_Dump(&g_id_in_flash);
+						return CMD_EXEC_SUCCESS;
 
-        case CMD_GETRT:
-             printf("执行STAT命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写获取实时数据的逻辑
-            return CMD_EXEC_SUCCESS;
+				case CMD_GETRT:
+						RuntimeFlash_Dump(&g_runtime_in_flash);
+						return CMD_EXEC_SUCCESS;
 
-        case CMD_GETCFG:
-            printf("执行GETCFG命令\n");
-            // 在这里直接编写获取配置信息的逻辑
-            return CMD_EXEC_SUCCESS;
+				case CMD_GETCFG:
+						ConfigFlash_Dump(&current_cfg_in_flash);
+						return CMD_EXEC_SUCCESS;
 
         case CMD_GETLOG:
              printf("执行STAT命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
             // 在这里直接编写获取日志信息的逻辑
             return CMD_EXEC_SUCCESS;
-
+				
+				/* ===================== 传感量 ===================== */
         case CMD_GETV:
              printf("执行STAT命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
             // 在这里直接编写获取电压数据的逻辑
@@ -456,91 +494,192 @@ CommandExecStatus ExecuteCommand(char* input)
             // 在这里直接编写获取电流数据的逻辑
             return CMD_EXEC_SUCCESS;
 
-        case CMD_GETT:
-             printf("执行STAT命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);            
-				      printf(">0x%02X,GETT_OK,%.2f\r\n", QG_ID, read_ambient_temperature());
-				
-			
-				// 在这里直接编写获取温度数据的逻辑
-            return CMD_EXEC_SUCCESS;
+        case CMD_GETT:        
+				     {
+								Send_Line("执行STAT命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
+								char data[32];
+								float t = read_ambient_temperature();
+								snprintf(data, sizeof(data), "%.2f", t);
+								Cmd_SendResp("GETT", "CMD_OK", data);
+								return CMD_EXEC_SUCCESS;
+							}			
 
+				/* ===================== EIS 测量 ===================== */
         case CMD_GETE:
              g_current_state=SYS_EIS_SWEEP ;
-				printf("执行STAT命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写能量测量或EIS测量的启动逻辑
+						 printf("执行GETE命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
             return CMD_EXEC_SUCCESS;
 
         case CMD_GETZ:
-         g_current_state=SYS_EIS_SINGLE ;
-				printf("执行GETS_XX命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写获取特定传感器数据的逻辑
+						g_current_state=SYS_EIS_SINGLE ;
+						printf("执行GETZ命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
             return CMD_EXEC_SUCCESS;
+				
 
+				/* ===================== EIS 参数设置 ===================== */
         case CMD_SET_EIS_AMP:
-            printf("执行SET_EIS_AMP命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置EIS振幅的逻辑
-            return CMD_EXEC_SUCCESS;
+						{
+								QG_ACVoltPP = (float)CommandParam1;
+								ConfigFlash_SaveIfChanged();
+
+								QG_ConfigFlash_t cfg;
+								if (ConfigFlash_Read(&cfg) && (cfg.ac_volt_pp == QG_ACVoltPP))
+										Cmd_SendResp("SET_EIS_AMP", "CMD_OK", "");
+								else
+										Cmd_SendResp("SET_EIS_AMP", "FLASH_ERR", "");
+
+								return CMD_EXEC_SUCCESS;
+						}
 
         case CMD_SET_EIS_BIAS:
-            printf("执行SET_EIS_BIAS命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置EIS偏置的逻辑
-            return CMD_EXEC_SUCCESS;
+						{
+								QG_DCVolt = (float)CommandParam1;
+								ConfigFlash_SaveIfChanged();
 
-        case CMD_SET_EIS_CYCLES:
-            printf("执行SET_EIS_CYCLES命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置EIS周期数的逻辑
-            return CMD_EXEC_SUCCESS;
+								QG_ConfigFlash_t cfg;
+								if (ConfigFlash_Read(&cfg) && (cfg.dc_volt == QG_DCVolt))
+										Cmd_SendResp("SET_EIS_BIAS", "CMD_OK", "");
+								else
+										Cmd_SendResp("SET_EIS_BIAS", "FLASH_ERR", "");
 
-        case CMD_SET_EIS_FREQ_START:
-            printf("执行SET_EIS_FREQ_START命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置EIS起始频率的逻辑
-            return CMD_EXEC_SUCCESS;
+								return CMD_EXEC_SUCCESS;
+						}
 
-        case CMD_SET_EIS_FREQ_END:
-            printf("执行SET_EIS_FREQ_END命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置EIS结束频率的逻辑
-            return CMD_EXEC_SUCCESS;
+				case CMD_SET_EIS_FREQ_START:
+				{
+						QG_EIS_FREQ_START = (float)CommandParam1;
+						ConfigFlash_SaveIfChanged();
 
-        case CMD_SET_EIS_FREQ_POINTS:
-            printf("执行SET_EIS_FREQ_POINTS命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置EIS频率点数的逻辑
-            return CMD_EXEC_SUCCESS;
+						QG_ConfigFlash_t cfg;
+						if (ConfigFlash_Read(&cfg) && (cfg.sweep_start_freq == QG_EIS_FREQ_START))
+								Cmd_SendResp("SET_EIS_FREQ_START", "CMD_OK", "");
+						else
+								Cmd_SendResp("SET_EIS_FREQ_START", "FLASH_ERR", "");
 
+
+						return CMD_EXEC_SUCCESS;
+				}
+
+				case CMD_SET_EIS_FREQ_END:
+				{
+						QG_EIS_FREQ_END = (float)CommandParam1;
+						ConfigFlash_SaveIfChanged();
+
+						QG_ConfigFlash_t cfg;
+						if (ConfigFlash_Read(&cfg) && (cfg.sweep_stop_freq == QG_EIS_FREQ_END))
+								Cmd_SendResp("SET_EIS_FREQ_END", "CMD_OK", "");
+						else
+								Cmd_SendResp("SET_EIS_FREQ_END", "FLASH_ERR", "");
+
+						return CMD_EXEC_SUCCESS;
+				}
+
+				case CMD_SET_EIS_FREQ_POINTS:
+				{
+						QG_EIS_FREQ_POINTS = (uint32_t)CommandParam1;
+						ConfigFlash_SaveIfChanged();
+
+						QG_ConfigFlash_t cfg;
+						if (ConfigFlash_Read(&cfg) && (cfg.sweep_points == QG_EIS_FREQ_POINTS))
+								Cmd_SendResp("SET_EIS_FREQ_POINTS", "CMD_OK", "");
+						else
+								Cmd_SendResp("SET_EIS_FREQ_POINTS", "FLASH_ERR", "");
+
+						return CMD_EXEC_SUCCESS;
+				}
+				
+				/* ===================== 阈值配置 ===================== */
         case CMD_SET_TEMP_HIGH_ALARM:
-            printf("执行SET_TEMP_HIGH_ALARM命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置高温报警阈值的逻辑
-            return CMD_EXEC_SUCCESS;
+				{
+						QG_TEMP_HIGH_ALARM = (float)CommandParam1;
+						ConfigFlash_SaveIfChanged();
 
-        case CMD_SET_VOLT_CELL_HIGH:
-            printf("执行SET_VOLT_CELL_HIGH命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置单体电压高报警的逻辑
-            return CMD_EXEC_SUCCESS;
+						QG_ConfigFlash_t cfg;
+						if (ConfigFlash_Read(&cfg) && (cfg.temp_high_alarm == QG_TEMP_HIGH_ALARM))
+								Cmd_SendResp("SET_TEMP_HIGH_ALARM", "CMD_OK", "");
+						else
+								Cmd_SendResp("SET_TEMP_HIGH_ALARM", "FLASH_ERR", "");
 
-        case CMD_SET_VOLT_CELL_LOW:
-            printf("执行SET_VOLT_CELL_LOW命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置单体电压低报警的逻辑
-            return CMD_EXEC_SUCCESS;
+						return CMD_EXEC_SUCCESS;
+				}
 
-        case CMD_SET_CURR_CHG_ALARM:
-            printf("执行SET_CURR_CHG_ALARM命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置充电电流报警的逻辑
-            return CMD_EXEC_SUCCESS;
+				case CMD_SET_VOLT_CELL_HIGH:
+				{
+						QG_VOLT_CELL_HIGH = (float)CommandParam1;
+						ConfigFlash_SaveIfChanged();
 
-        case CMD_SET_CURR_DIS_ALARM:
-            printf("执行SET_CURR_DIS_ALARM命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置放电电流报警的逻辑
-            return CMD_EXEC_SUCCESS;
+						QG_ConfigFlash_t cfg;
+						if (ConfigFlash_Read(&cfg) && (cfg.volt_cell_high == QG_VOLT_CELL_HIGH))
+								Cmd_SendResp("SET_VOLT_CELL_HIGH", "CMD_OK", "");
+						else
+								Cmd_SendResp("SET_VOLT_CELL_HIGH", "FLASH_ERR", "");
 
-        case CMD_SET_CELL_COUNT:
-            printf("执行SET_CELL_COUNT命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
-            // 在这里直接编写设置电芯数量的逻辑
-            return CMD_EXEC_SUCCESS;
+						return CMD_EXEC_SUCCESS;
+				}
+
+				case CMD_SET_VOLT_CELL_LOW:
+				{
+						QG_VOLT_CELL_LOW = (float)CommandParam1;
+						ConfigFlash_SaveIfChanged();
+
+						QG_ConfigFlash_t cfg;
+						if (ConfigFlash_Read(&cfg) && (cfg.volt_cell_low == QG_VOLT_CELL_LOW))
+								Cmd_SendResp("SET_VOLT_CELL_LOW", "CMD_OK", "");
+						else
+								Cmd_SendResp("SET_VOLT_CELL_LOW", "FLASH_ERR", "");
+
+						return CMD_EXEC_SUCCESS;
+				}
+
+				case CMD_SET_CURR_CHG_ALARM:
+				{
+						QG_CURR_CHG_ALARM = (float)CommandParam1;
+						ConfigFlash_SaveIfChanged();
+
+						QG_ConfigFlash_t cfg;
+						if (ConfigFlash_Read(&cfg) && (cfg.curr_chg_alarm == QG_CURR_CHG_ALARM))
+								Cmd_SendResp("SET_CURR_CHG_ALARM", "CMD_OK", "");
+						else
+								Cmd_SendResp("SET_CURR_CHG_ALARM", "FLASH_ERR", "");
+
+						return CMD_EXEC_SUCCESS;
+				}
+
+				case CMD_SET_CURR_DIS_ALARM:
+				{
+						QG_CURR_DIS_ALARM = (float)CommandParam1;
+						ConfigFlash_SaveIfChanged();
+
+						QG_ConfigFlash_t cfg;
+						if (ConfigFlash_Read(&cfg) && (cfg.curr_dis_alarm == QG_CURR_DIS_ALARM))
+								Cmd_SendResp("SET_CURR_DIS_ALARM", "CMD_OK", "");
+						else
+								Cmd_SendResp("SET_CURR_DIS_ALARM", "FLASH_ERR", "");
+
+						return CMD_EXEC_SUCCESS;
+				}
+
+				case CMD_SET_CELL_COUNT:
+				{
+						QG_CELL_COUNT = (uint32_t)CommandParam1;
+						ConfigFlash_SaveIfChanged();
+
+						QG_ConfigFlash_t cfg;
+						if (ConfigFlash_Read(&cfg) && (cfg.cell_count == QG_CELL_COUNT))
+								Cmd_SendResp("SET_CELL_COUNT", "CMD_OK", "");
+						else
+								Cmd_SendResp("SET_CELL_COUNT", "FLASH_ERR", "");
+
+						return CMD_EXEC_SUCCESS;
+				}
+
 
         case CMD_SET_CALIB_DATA:
             printf("执行SET_CALIB_DATA命令，参数1：%.6f，参数2：%.6f\r\n", CommandParam1,CommandParam2);
             // 在这里直接编写设置校准数据的逻辑
             return CMD_EXEC_SUCCESS;
-
+				
+				/* ===================== 系统控制 ===================== */
         case CMD_RST:
             printf("执行RST命令\n");
             // 在这里直接编写系统复位的逻辑
@@ -566,6 +705,25 @@ CommandExecStatus ExecuteCommand(char* input)
             // 在这里直接编写中止当前操作的逻辑
 				    g_current_state=SYS_CALIBRATION ;
             return CMD_EXEC_SUCCESS;		
+
+				case CMD_IDRST:
+						printf("Reset Identity to defaults...\r\n");
+						IdFlash_ResetToDefaultAndSave();
+						IdFlash_Dump(&g_id_in_flash);
+						return CMD_EXEC_SUCCESS;
+
+				case CMD_RTRST:
+						printf("Reset Runtime to defaults...\r\n");
+						RuntimeFlash_ResetToDefaultAndSave();
+						RuntimeFlash_Dump(&g_runtime_in_flash);
+						return CMD_EXEC_SUCCESS;
+
+				case CMD_ERASE_ALL_FLASH:
+						printf("执行ERASEALL命令：擦除 Config/Calib/ID/Runtime 四个参数区！\r\n");
+						Flash_EraseAllParamZones();
+						break;
+
+
         case CMD_UNKNOWN:
         default:
             printf("未知命令: %s\n", CommandCode);
@@ -573,9 +731,8 @@ CommandExecStatus ExecuteCommand(char* input)
     }
 		
 						
-
+    return CMD_EXEC_UNKNOWN_CMD;
 }
-
 
 
 

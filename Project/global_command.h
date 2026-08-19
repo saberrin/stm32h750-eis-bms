@@ -8,10 +8,6 @@
 
 
 
-
-
-
-
 //extern volatile int abortCommandReceived; // 声明全局变量
 //extern volatile int pauseCommandReceived;
 
@@ -38,10 +34,7 @@
 
 //extern volatile int EIS_Test_Cycles;//循环测量EIS的次数
 
-
 //extern volatile int Print_UIT_status;
-
-
 
 
 // 系统状态码定义
@@ -65,6 +58,7 @@
 #define VOLT_BALANC_ERR   15  // 相邻电池电压不平衡
 #define CURR_CHG_HIGH    16  // 外部充电电流过大
 #define CURR_DIS_HIGH    17  // 外部放电电流过大
+#define SWEET            18    //无故障
 
 
 extern volatile float    QG_ACVoltPP;					//设置EIS激励信号幅值 (mV)。
@@ -82,11 +76,10 @@ extern volatile uint32_t QG_CELL_COUNT ;		//设置电池包内电芯数量
 extern volatile float    SET_CALIB_DATA[10];			//设置测量通道（电压、电流、温度）的校准系数数组
 
 
-
 extern volatile double CommandParam1 ;    //命令中分离出的参数1
 extern volatile double CommandParam2 ;    //命令中分离出的参数2
 
-//extern  s16 DB_data[6] ;
+extern volatile int Cell_ID;    //当前检测的电芯号（随开关矩阵切换变化）
 
 #define QG_ID 0x11
 
@@ -102,20 +95,12 @@ typedef enum {
 } SystemState_t;
 
 
-
 extern volatile SystemState_t g_current_state;// 全局状态变量，记录系统当前状态
 
 extern volatile int g_system_error_code;  // 记录系统错误码
 
 
 #endif /* __GLOBAL_COMMAND_H__ */
-
-
-
-
-
-
-
 
 
 

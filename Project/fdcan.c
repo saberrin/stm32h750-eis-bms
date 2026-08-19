@@ -4,6 +4,7 @@
 #include "parse_command.h"
 #include "EIS_Measure.h"
 #include "global_command.h"
+#include <stdarg.h>
 //本程序只供学习使用，未经作者许可，不得用于其它任何用途
 //ALIENTEK STM32H7开发板
 //FDCAN驱动代码	   
@@ -55,7 +56,7 @@ u8 FDCAN1_Mode_Init(u16 presc,u8 ntsjw,u16 ntsg1,u8 ntsg2,u32 mode)
     FDCAN1_Handler.Init.RxBuffersNbr=0;                             //接收缓冲编号
     FDCAN1_Handler.Init.TxEventsNbr=0;                              //发送事件编号
     FDCAN1_Handler.Init.TxBuffersNbr=0;                             //发送缓冲编号
-    FDCAN1_Handler.Init.TxFifoQueueElmtsNbr=1;                      //发送FIFO序列元素编号
+    FDCAN1_Handler.Init.TxFifoQueueElmtsNbr=16;                      //发送FIFO序列元素编号
     FDCAN1_Handler.Init.TxFifoQueueMode=FDCAN_TX_FIFO_OPERATION;    //发送FIFO序列模式
     FDCAN1_Handler.Init.TxElmtSize=FDCAN_DATA_BYTES_8;              //发送大小:8字节
     if(HAL_FDCAN_Init(&FDCAN1_Handler)!=HAL_OK) return 1;           //初始化FDCAN
@@ -190,12 +191,72 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
         if (can_rxdata[len - 1] == '\n')
         {
             rx_buffer[rx_index] = '\0';  // 字符串结尾
-            ParseReceivedData((char *)rx_buffer);
+            //ParseReceivedData((char *)rx_buffer);
+						ExecuteCommand((char *)rx_buffer);
             rx_index = 0; // 重置缓存指针
         }
 
         HAL_FDCAN_ActivateNotification(hfdcan, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
     }
+}
+
+#define FDCAN_MAX_DATA_LEN 8
+const uint32_t FDCAN_DLC_BYTES_MAP[9] = {
+    FDCAN_DLC_BYTES_0,
+    FDCAN_DLC_BYTES_1,
+    FDCAN_DLC_BYTES_2,
+    FDCAN_DLC_BYTES_3,
+    FDCAN_DLC_BYTES_4,
+    FDCAN_DLC_BYTES_5,
+    FDCAN_DLC_BYTES_6,
+    FDCAN_DLC_BYTES_7,
+    FDCAN_DLC_BYTES_8
+};
+
+void FDCAN1_Send_String(uint8_t *msg) {
+    uint32_t len = strlen((char *)msg);
+    uint32_t offset = 0;
+    while (offset < len) {
+				
+				uint32_t tick = HAL_GetTick();
+				while (HAL_FDCAN_GetTxFifoFreeLevel(&FDCAN1_Handler) == 0) {
+            // 什么都不做，快速轮询
+            // 只能在主循环调用，不能在中断里
+						if (HAL_GetTick() - tick > 10)
+							{
+									// 超时处理
+									printf("FDCAN TX FIFO FULL!\r\n");
+									break;
+							}
+        }
+
+        uint8_t send_len = (len - offset > FDCAN_MAX_DATA_LEN) ? FDCAN_MAX_DATA_LEN : (len - offset);
+				uint32_t dlc_value = FDCAN_DLC_BYTES_MAP[send_len];
+        FDCAN1_Send_Msg(msg + offset, dlc_value);
+
+        offset += send_len;
+				//HAL_Delay(1); //中断调用链中出现硬件延时会卡死！！
+				delay_ms(1);
+
+    }
+}
+
+
+
+void Send_Line(const char *fmt, ...)
+{
+    char buf[128];
+    va_list args;
+
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    /* UART */
+    printf("%s", buf);
+
+    /* CAN */
+    FDCAN1_Send_String((uint8_t *)buf);
 }
 
 #endif	

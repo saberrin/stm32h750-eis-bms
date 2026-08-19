@@ -16,13 +16,10 @@
 //#define CMD_RESUME 0x000B
 //#define CMD_LOOP_TEST 0x000C
 //#define CMD_HELP 0x000D
-
 //#define CMD_UNKNOWN 0xFFFF
 
 //void print_QG_system_parameter(void);
 //void QingGeng_help(void);
-
-
 
 
 #ifndef PARSE_COMMAND_H
@@ -30,8 +27,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
-
-
 
 
 // ÃüÁîÖ´ÐÐ×´Ì¬Ã¶¾Ù
@@ -45,8 +40,6 @@ typedef enum {
 
 
 
-
-
 // º¯ÊýÉùÃ÷
 CommandExecStatus ExecuteCommand(char* input);
 void RegisterAllCommands(void);
@@ -55,7 +48,7 @@ void RegisterAllCommands(void);
 void ParseReceivedData( char* input);
 
 
-
+void Cmd_SendResp(const char *cmd, const char *cmd_stat, const char *data);
 
 
 

@@ -2,7 +2,9 @@
 #include <string.h>
 #include <stdio.h>
 #include "qspi.h" 
-
+#include "fdcan.h"
+#include "parse_command.h"
+#define DUMP_DATA_BUF_SIZE   512
 extern QSPI_HandleTypeDef hqspi;
 extern void QSPI_Init(void);
 // 低层 Flash 接口
@@ -228,38 +230,61 @@ static void pack_globals(QG_ConfigFlash_t* out)
 {
     if (!out) return;
     memset(out, 0, sizeof(*out));
-//    out->magic            = CONFIG_MAGIC;
-//    out->sweep_points     = (uint32_t)QG_SweepPoints;
-//    out->sweep_en         = (uint8_t) QG_SweepEn;
-//    out->sweep_start_freq = (float)  QG_SweepStartFreq;
-//    out->sweep_stop_freq  = (float)  QG_SweepStopFreq;
-//    out->sin_freq         = (float)  QG_SinFreq;
-//    out->ac_volt_pp       = (float)  QG_ACVoltPP;
-//    out->dc_volt          = (float)  QG_DCVolt;
-//    out->rcal_val         = (float)  QG_RcalVal;
-//    out->sweep_log        = (uint8_t)QG_SweepLog;
+
+    out->magic             = CONFIG_MAGIC;
+
+    /* EIS 配置 */
+    out->ac_volt_pp        = QG_ACVoltPP;
+    out->dc_volt           = QG_DCVolt;
+    out->sweep_start_freq  = QG_EIS_FREQ_START;
+    out->sweep_stop_freq   = QG_EIS_FREQ_END;
+    out->sweep_points      = QG_EIS_FREQ_POINTS;
+
+    /* 阈值配置 */
+    out->temp_high_alarm   = QG_TEMP_HIGH_ALARM;
+    out->volt_cell_high    = QG_VOLT_CELL_HIGH;
+    out->volt_cell_low     = QG_VOLT_CELL_LOW;
+    out->curr_chg_alarm    = QG_CURR_CHG_ALARM;
+    out->curr_dis_alarm    = QG_CURR_DIS_ALARM;
+
+    /* 电芯数量 */
+    out->cell_count        = QG_CELL_COUNT;
+
+    /* 校准系数 */
+    for (int i = 0; i < 10; i++)
+        out->calib_data[i] = SET_CALIB_DATA[i];
+
 }
+
 
 // 应用结构体到“全局参数”
 static void apply_to_globals(const QG_ConfigFlash_t* in)
 {
-//    if (!in) return;
-//    QG_SweepPoints    = ( uint32_t)in->sweep_points;
-//    QG_SweepEn        = ( BoolFlag) in->sweep_en;
-//    QG_SweepStartFreq = ( float)    in->sweep_start_freq;
-//    QG_SweepStopFreq  = ( float)    in->sweep_stop_freq;
-//    QG_SinFreq        = ( float)    in->sin_freq;
-//    QG_ACVoltPP       = ( float)    in->ac_volt_pp;
-//    QG_DCVolt         = ( float)    in->dc_volt;
-//    QG_RcalVal        = ( float)    in->rcal_val;
-//    QG_SweepLog       = ( BoolFlag) in->sweep_log;
+    if (!in) return;
 
-//    // 合理性护栏（避免脏数据）
-//    if (QG_SweepPoints == 0u || QG_SweepPoints > 1024u)  QG_SweepPoints = 100u;
-//    if (QG_SweepStartFreq <= 0.0f || QG_SweepStartFreq > 100000.0f) QG_SweepStartFreq = 10000.0f;
-//    if (QG_SweepStopFreq  <= 0.0f || QG_SweepStopFreq  >= QG_SweepStartFreq) QG_SweepStopFreq = 50.0f;
-//    if (QG_ACVoltPP < 0.0f || QG_ACVoltPP > 8.0f) QG_ACVoltPP = 8.0f;
+    /* EIS 配置 */
+    QG_ACVoltPP       = in->ac_volt_pp;
+    QG_DCVolt         = in->dc_volt;
+    QG_EIS_FREQ_START = in->sweep_start_freq;
+    QG_EIS_FREQ_END   = in->sweep_stop_freq;
+    QG_EIS_FREQ_POINTS= in->sweep_points;
+
+    /* 阈值 */
+    QG_TEMP_HIGH_ALARM= in->temp_high_alarm;
+    QG_VOLT_CELL_HIGH = in->volt_cell_high;
+    QG_VOLT_CELL_LOW  = in->volt_cell_low;
+    QG_CURR_CHG_ALARM = in->curr_chg_alarm;
+    QG_CURR_DIS_ALARM = in->curr_dis_alarm;
+
+    /* 电芯数量 */
+    QG_CELL_COUNT     = in->cell_count;
+
+    /* 校准数组 */
+    for (int i = 0; i < 10; i++)
+        SET_CALIB_DATA[i] = in->calib_data[i];
+
 }
+
 
 bool ConfigFlash_Read(QG_ConfigFlash_t* out)
 {
@@ -313,21 +338,34 @@ void ConfigFlash_LoadAtStartup(void)
         apply_to_globals(&cfg);
         current_cfg_in_flash = cfg;
 
-        printf("ConfigFlash: loaded config from W25Q.\r\n");
-        printf("  magic            : 0x%08lX\r\n", (unsigned long)cfg.magic);
-        printf("  crc32            : 0x%08lX\r\n", (unsigned long)cfg.crc32);
-        printf("  sweep_points     : %lu\r\n",      (unsigned long)cfg.sweep_points);
-        printf("  sweep_en         : %u\r\n",       (unsigned)cfg.sweep_en);
-        printf("  sweep_start_freq : %.3f\r\n",     (double)cfg.sweep_start_freq);
-        printf("  sweep_stop_freq  : %.3f\r\n",     (double)cfg.sweep_stop_freq);
-        printf("  sin_freq         : %.3f\r\n",     (double)cfg.sin_freq);
-        printf("  ac_volt_pp       : %.3f\r\n",     (double)cfg.ac_volt_pp);
-        printf("  dc_volt          : %.3f\r\n",     (double)cfg.dc_volt);
-        printf("  rcal_val         : %.3f\r\n",     (double)cfg.rcal_val);
-        printf("  sweep_log        : %u\r\n",       (unsigned)cfg.sweep_log);
-        printf("  reserved         : [%02X %02X %02X]\r\n",
-               cfg.reserved[0], cfg.reserved[1], cfg.reserved[2]);
-        printf("-----------------------------------------\r\n");
+//        /* 基础信息 */
+//				Send_Line("magic            : 0x%08lX\r\n", (unsigned long)cfg.magic);
+//				Send_Line("crc32            : 0x%08lX\r\n", (unsigned long)cfg.crc32);
+
+//				/* EIS 配置 */
+//				Send_Line("ac_volt_pp       : %.3f\r\n", (double)cfg.ac_volt_pp);
+//				Send_Line("dc_volt          : %.3f\r\n", (double)cfg.dc_volt);
+//				Send_Line("sweep_start_freq : %.3f\r\n", (double)cfg.sweep_start_freq);
+//				Send_Line("sweep_stop_freq  : %.3f\r\n", (double)cfg.sweep_stop_freq);
+//				Send_Line("sweep_points     : %lu\r\n", (unsigned long)cfg.sweep_points);
+
+
+//				/* 阈值 */
+//				Send_Line("temp_high_alarm  : %.2f\r\n", (double)cfg.temp_high_alarm);
+//				Send_Line("volt_cell_high   : %.2f\r\n", (double)cfg.volt_cell_high);
+//				Send_Line("volt_cell_low    : %.2f\r\n", (double)cfg.volt_cell_low);
+//				Send_Line("curr_chg_alarm   : %.2f\r\n", (double)cfg.curr_chg_alarm);
+//				Send_Line("curr_dis_alarm   : %.2f\r\n", (double)cfg.curr_dis_alarm);
+
+//				/* 电芯数量 */
+//				Send_Line("cell_count       : %lu\r\n", (unsigned long)cfg.cell_count);
+
+//				/* 校准数组 */
+//				for (int i = 0; i < 10; i++)
+//						Send_Line("calib_data[%d]    : %.6f\r\n", i, (double)cfg.calib_data[i]);
+
+				ConfigFlash_Dump(&current_cfg_in_flash);
+
     } else {
         printf("ConfigFlash: invalid/empty. Using defaults.\r\n");
         load_defaults_to_globals();
@@ -339,14 +377,6 @@ void ConfigFlash_LoadAtStartup(void)
         }
     }
 
-//    // 兜底：保证能扫一轮
-//    if (QG_SweepEn == 0 || QG_SweepStartFreq <= 0.0f || QG_SweepStopFreq <= 0.0f) {
-//        QG_SweepEn        = (BoolFlag)1;
-//        QG_SweepStartFreq = 10000.0f;
-//        QG_SweepStopFreq  = 50.0f;
-//        QG_SweepPoints    = 100u;
-//        QG_ACVoltPP       = 8.0f;
-//    }
 }
 
 bool ConfigFlash_SaveFromGlobals(void)
@@ -379,21 +409,76 @@ bool ConfigFlash_SaveIfChanged(void)
     return true; // 没变化也返回 true，表示“不需要写”
 }
 
-void ConfigFlash_Dump(const QG_ConfigFlash_t* cfg)
+
+void ConfigFlash_Dump(const QG_ConfigFlash_t *cfg)
 {
     if (!cfg) return;
-    printf("ConfigFlash dump:\r\n");
-    printf("  magic            : 0x%08lX\r\n", (unsigned long)cfg->magic);
-    printf("  crc32            : 0x%08lX\r\n", (unsigned long)cfg->crc32);
-    printf("  sweep_points     : %lu\r\n",     (unsigned long)cfg->sweep_points);
-    printf("  sweep_en         : %u\r\n",      (unsigned)cfg->sweep_en);
-    printf("  sweep_start_freq : %.3f\r\n",    (double)cfg->sweep_start_freq);
-    printf("  sweep_stop_freq  : %.3f\r\n",    (double)cfg->sweep_stop_freq);
-    printf("  sin_freq         : %.3f\r\n",    (double)cfg->sin_freq);
-    printf("  ac_volt_pp       : %.3f\r\n",    (double)cfg->ac_volt_pp);
-    printf("  dc_volt          : %.3f\r\n",    (double)cfg->dc_volt);
-    printf("  rcal_val         : %.3f\r\n",    (double)cfg->rcal_val);
-    printf("  sweep_log        : %u\r\n",      (unsigned)cfg->sweep_log);
-    printf("  reserved         : [%02X %02X %02X]\r\n",
-           cfg->reserved[0], cfg->reserved[1], cfg->reserved[2]);
+
+    Send_Line(">0x%02X, GETCFG, CMD_OK\r\n", QG_ID);
+
+    /* 基础信息 */
+    Send_Line("magic            : 0x%08lX\r\n", (unsigned long)cfg->magic);
+    Send_Line("crc32            : 0x%08lX\r\n", (unsigned long)cfg->crc32);
+
+    /* EIS 配置 */
+    Send_Line("ac_volt_pp       : %.3f\r\n", (double)cfg->ac_volt_pp);
+    Send_Line("dc_volt          : %.3f\r\n", (double)cfg->dc_volt);
+    Send_Line("sweep_start_freq : %.3f\r\n", (double)cfg->sweep_start_freq);
+    Send_Line("sweep_stop_freq  : %.3f\r\n", (double)cfg->sweep_stop_freq);
+    Send_Line("sweep_points     : %lu\r\n", (unsigned long)cfg->sweep_points);
+    Send_Line("sweep_en         : %u\r\n", cfg->sweep_en);
+    Send_Line("sweep_log        : %u\r\n", cfg->sweep_log);
+
+    /* 阈值 */
+    Send_Line("temp_high_alarm  : %.2f\r\n", (double)cfg->temp_high_alarm);
+    Send_Line("volt_cell_high   : %.2f\r\n", (double)cfg->volt_cell_high);
+    Send_Line("volt_cell_low    : %.2f\r\n", (double)cfg->volt_cell_low);
+    Send_Line("curr_chg_alarm   : %.2f\r\n", (double)cfg->curr_chg_alarm);
+    Send_Line("curr_dis_alarm   : %.2f\r\n", (double)cfg->curr_dis_alarm);
+
+    /* 电芯数量 */
+    Send_Line("cell_count       : %lu\r\n", (unsigned long)cfg->cell_count);
+
+    /* 校准数组 */
+    for (int i = 0; i < 10; i++)
+        Send_Line("calib_data[%d]    : %.6f\r\n", i, (double)cfg->calib_data[i]);
+
+		Send_Line("<\r\n");
+
+}
+
+
+
+
+void Flash_EraseAllParamZones(void)
+{
+    uint32_t sector;
+
+    printf("==== Flash ERASE ALL param zones ====\r\n");
+
+    // 1) CONFIG
+    sector = CONFIG_FLASH_ADDR / 4096u;
+    printf("  - Erase CONFIG   sector %lu @0x%08lX\r\n",
+           (unsigned long)sector, (unsigned long)CONFIG_FLASH_ADDR);
+    norflash_ex_erase_sector(sector);
+
+    // 2) CALIB
+    sector = CALIB_FLASH_ADDR / 4096u;
+    printf("  - Erase CALIB    sector %lu @0x%08lX\r\n",
+           (unsigned long)sector, (unsigned long)CALIB_FLASH_ADDR);
+    norflash_ex_erase_sector(sector);
+
+    // 3) ID
+    sector = ID_FLASH_ADDR / 4096u;
+    printf("  - Erase ID       sector %lu @0x%08lX\r\n",
+           (unsigned long)sector, (unsigned long)ID_FLASH_ADDR);
+    norflash_ex_erase_sector(sector);
+
+    // 4) RUNTIME
+    sector = RUNTIME_FLASH_ADDR / 4096u;
+    printf("  - Erase RUNTIME  sector %lu @0x%08lX\r\n",
+           (unsigned long)sector, (unsigned long)RUNTIME_FLASH_ADDR);
+    norflash_ex_erase_sector(sector);
+
+    printf("==== Flash ERASE ALL done. Please reset board. ====\r\n");
 }

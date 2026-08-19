@@ -41,6 +41,7 @@
 #include "timer.h"
 #include "dac.h"
 #include "EIS_Measure.h"
+#include "runtime_flash.h"
 
 /** @addtogroup STM32H7xx_HAL_Examples
   * @{
@@ -185,6 +186,18 @@ void TIM6_DAC_IRQHandler(void)
 					
 
 					
+        }
+    }
+}
+
+void TIM7_IRQHandler(void)
+{
+    if (__HAL_TIM_GET_FLAG(&TIM7_Handler, TIM_FLAG_UPDATE) != RESET)
+    {
+        if (__HAL_TIM_GET_IT_SOURCE(&TIM7_Handler, TIM_IT_UPDATE) != RESET)
+        {
+            __HAL_TIM_CLEAR_IT(&TIM7_Handler, TIM_IT_UPDATE);
+            Runtime_On1sTick();
         }
     }
 }
