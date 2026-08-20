@@ -111,7 +111,7 @@ static int32_t reference_baseline_volt_code = 0;
 static int32_t reference_baseline_curr_code = 0;
 
 static int32_t delta_volt_code = 0;
-static int32_t delta_curr_code = 0;
+static volatile int32_t delta_curr_code = 0;
 static uint8_t first_measure_flag = 1;
 
 static void Reset_ADCRateStepCompensation(void)
@@ -258,16 +258,7 @@ void Auto_Set_ADC_SampleRate(double Freq)
         delta_volt_code = avg_v_code - reference_baseline_volt_code;
         delta_curr_code = avg_i_code - reference_baseline_curr_code;
     }
-
-
-
-    printf("ADC²ÉÑùÂÊÇÐ»»: Freq=%.6fHz, SPS=%lu, V_base=%.6fmV, V_ref=%.6fmV, V_comp=%.6fmV, I_comp=%.6fmV\r\n",
-           Freq,
-           (unsigned long)target_sps,
-           SignedCodeToVoltage(avg_v_code) * 1000.0f,
-           SignedCodeToVoltage(reference_baseline_volt_code) * 1000.0f,
-           SignedCodeToVoltage(delta_volt_code) * 1000.0f,
-           SignedCodeToVoltage(delta_curr_code) * 1000.0f);
+    /* Keep the EIS_CORE serial/CAN protocol free of board-debug messages. */
 }
 
 
@@ -410,7 +401,7 @@ while (ADC_status == 1){
 				for (int i = 0; i < Sampling_Count; i++) {
 				int32_t real_v_code = RawToSignedCode(Voltage_data[i]) - delta_volt_code;
 				Voltage[i] = -1.0f * SignedCodeToVoltage(real_v_code);
-				printf("%.8f;\n", Voltage[i]/(-1000));
+				printf("%.4f;\n", Voltage[i]/(-1000));
 				Watchdog_Refresh();
     }
 	 printf("\r\n");		
@@ -421,7 +412,7 @@ while (ADC_status == 1){
     int32_t real_i_code = RawToSignedCode(Current_data[i]);
  //  Current[i] = 2.0*SignedCodeToVoltage(real_i_code)-5.0;
 		 Current[i] = 1.54f*SignedCodeToVoltage(real_i_code)-3.85f;		 
-		 printf("%.8f;\n",Current[i]);
+		 printf("%.4f;\n",Current[i]);
 				Watchdog_Refresh();
     }
 	 	printf("\r\n");
@@ -520,13 +511,12 @@ while (ADC_status == 1){
 		eis_batch_buffer[batch_count].imag_impedance = X;
 		eis_batch_buffer[batch_count].frequency = Freq;
 		batch_count++;
-		
-		printf("0x%X_B_SWF_Freq%.4frea%.4fimage%.4f_end\r\n",QG_ID,Freq, R, X);
 		char line_buffer[256];
-    snprintf(line_buffer, sizeof(line_buffer), "0x%X_B_SWF_Freq%.4frea%.4fimage%.4f_end\r\n",QG_ID,Freq, R, X);
-    FDCAN1_Send_String((uint8_t *)line_buffer);	
-				
-	
+		snprintf(line_buffer, sizeof(line_buffer),
+					 ">0x%X,GETZ,%d, %.6f,CMD_OK,R%.4f,I%.4f,F%.4f<\n",
+					 QG_ID, Cell_ID, CommandParam2, R, X, Freq);
+		FDCAN1_Send_String((uint8_t *)line_buffer);
+		printf("%s", line_buffer);
 }
 
 void sweep_measure(double* Freq_Points, int total_points){
@@ -540,6 +530,7 @@ void sweep_measure(double* Freq_Points, int total_points){
 		printf(" Freq %.5f\n", Freq);		
 		single_measure(Freq);
 	}
+	Send_EIS_Result();
 
 }
 
@@ -554,45 +545,38 @@ uint32_t CalculateChecksum(EIS_DataRow *data, uint32_t count) {
     }
     return checksum;
 }
-void Send_EIS_Result() {
+void Send_EIS_Result(void)
+{
     char line_buffer[256];
 
-    snprintf(line_buffer, sizeof(line_buffer), "0x%X_EIS_data_packet_start_", QG_ID);
+    snprintf(line_buffer, sizeof(line_buffer),
+             ">0x%02X, GETE, %d, %.6f,CMD_OK,\r\n",
+             QG_ID, Cell_ID, CommandParam2);
     FDCAN1_Send_String((uint8_t *)line_buffer);
-		printf("0x%X_EIS_data_packet_start_", QG_ID);
+    printf("%s", line_buffer);
 
     for (uint32_t j = 0; j < batch_count; j++) {
-        snprintf(line_buffer, sizeof(line_buffer), "R%d,%.4f,I%d,%.4f,F%d,%.4f",
-                 j + 1,
-                 eis_batch_buffer[j].real_impedance,
-                 j + 1,
-                 eis_batch_buffer[j].imag_impedance,
-                 j + 1,
-                 eis_batch_buffer[j].frequency);
+        snprintf(line_buffer, sizeof(line_buffer),
+                 "R%d,%.4f,I%d,%.4f,F%d,%.4f",
+                 j + 1, eis_batch_buffer[j].real_impedance,
+                 j + 1, eis_batch_buffer[j].imag_impedance,
+                 j + 1, eis_batch_buffer[j].frequency);
         FDCAN1_Send_String((uint8_t *)line_buffer);
-				printf("%s", line_buffer);
-
+        printf("%s", line_buffer);
         if (j < batch_count - 1) {
             FDCAN1_Send_String((uint8_t *)";");
+            printf(";");
         }
     }
 
-    // ???
     uint32_t checksum = CalculateChecksum(eis_batch_buffer, batch_count);
-    snprintf(line_buffer, sizeof(line_buffer), ";CHECKSUM,%u;", checksum);
+    snprintf(line_buffer, sizeof(line_buffer),
+             ";CHECKSUM,%lu", (unsigned long)checksum);
     FDCAN1_Send_String((uint8_t *)line_buffer);
-		printf("%s", line_buffer);
-
-    // ??
-    float temperature = 25.0f;  // ??:??? Ds18b20ReadTemp()/16.0
-    snprintf(line_buffer, sizeof(line_buffer), "TEM_%.4f", temperature);
-    FDCAN1_Send_String((uint8_t *)line_buffer);
-
-    // ????
-    FDCAN1_Send_String((uint8_t *)"_EIS_data_packet_end\r\n");
-		printf("_EIS_data_packet_end\r\n");
+    printf("%s", line_buffer);
+    FDCAN1_Send_String((uint8_t *)"<\n");
+    printf("<\n");
 }
-
 #if 0 /* CAN transport is provided by the imported EIS_CORE fdcan.c */
 #define FDCAN_MAX_DATA_LEN 8
 const uint32_t FDCAN_DLC_BYTES_MAP[9] = {

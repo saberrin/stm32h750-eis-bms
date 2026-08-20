@@ -31,17 +31,6 @@ UART_HandleTypeDef UART_Handler;  // UART句柄
 static volatile uint8_t g_uart_command_ready = 0;
 static char g_uart_pending_command[USART_REC_LEN];
 
-static void USART_PrintHelp(void)
-{
-    printf("\r\n==================== 指令帮助说明 ====================\r\n");
-    printf("1. 快速帮助：直接输入 help 查看本提示\r\n");
-    printf("2. 标准控制指令格式：@终端地址,命令码[,参数1[,参数2]]\r\n");
-    printf("3. 0x00为广播地址\r\n");
-    printf("4. 参数1为电池编号，参数1为0代表所有电池\r\n");
-    printf("示例：@0X11,GETE,0 或 @0X11,GETZ,6,100\r\n");
-    printf("======================================================\r\n\r\n");
-}
-
 void USART_ProcessPendingCommand(void)
 {
     char command[USART_REC_LEN];
@@ -62,8 +51,6 @@ void USART_ProcessPendingCommand(void)
         strncmp(command, "SAVECAL", 7) == 0 ||
         strncmp(command, "FIXEDCAL", 8) == 0) {
         CurrentCalibrator_ProcessCommand(command);
-    } else if (strncmp(command, "help", 4) == 0) {
-        USART_PrintHelp();
     } else {
         ExecuteCommand(command);
     }
