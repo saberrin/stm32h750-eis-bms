@@ -270,6 +270,8 @@ void Auto_Set_ADC_SampleRate(double Freq)
   */
 void EIS_SingleFrequency_Measure(double Freq)
 {
+    /* Each response batch belongs to the cell currently selected by the matrix. */
+    batch_count = 0;
    
 
 
@@ -297,6 +299,8 @@ void EIS_SingleFrequency_Measure(double Freq)
   */
 void EIS_FrequencySweep_Measure(double Freq_Start, double Freq_End)
 {
+    /* Never carry points from the previously selected cell into this GETE. */
+    batch_count = 0;
     
 
    
@@ -401,7 +405,7 @@ while (ADC_status == 1){
 				for (int i = 0; i < Sampling_Count; i++) {
 				int32_t real_v_code = RawToSignedCode(Voltage_data[i]) - delta_volt_code;
 				Voltage[i] = -1.0f * SignedCodeToVoltage(real_v_code);
-				printf("%.4f;\n", Voltage[i]/(-1000));
+				printf("%.8f;\n", Voltage[i]/(-1000));
 				Watchdog_Refresh();
     }
 	 printf("\r\n");		
@@ -412,7 +416,7 @@ while (ADC_status == 1){
     int32_t real_i_code = RawToSignedCode(Current_data[i]);
  //  Current[i] = 2.0*SignedCodeToVoltage(real_i_code)-5.0;
 		 Current[i] = 1.54f*SignedCodeToVoltage(real_i_code)-3.85f;		 
-		 printf("%.4f;\n",Current[i]);
+		 printf("%.8f;\n",Current[i]);
 				Watchdog_Refresh();
     }
 	 	printf("\r\n");

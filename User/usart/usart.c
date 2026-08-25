@@ -28,33 +28,6 @@ u8 USART_RX_BUF[USART_REC_LEN]; 	// 接收缓冲,最大USART_REC_LEN个字节.
 u16 USART_RX_STA=0;       				// 接收状态标记（bit15：接收完成标志  bit14：接收到0x0d   bit13~0：接收到的有效字节数目）
 u8 aRxBuffer[RXBUFFERSIZE];				// HAL库使用的串口接收缓冲
 UART_HandleTypeDef UART_Handler;  // UART句柄
-static volatile uint8_t g_uart_command_ready = 0;
-static char g_uart_pending_command[USART_REC_LEN];
-
-void USART_ProcessPendingCommand(void)
-{
-    char command[USART_REC_LEN];
-
-    if (!g_uart_command_ready) return;
-
-    HAL_NVIC_DisableIRQ(USART_IRQn);
-    strncpy(command, g_uart_pending_command, sizeof(command) - 1U);
-    command[sizeof(command) - 1U] = '\0';
-    g_uart_command_ready = 0;
-    HAL_NVIC_EnableIRQ(USART_IRQn);
-
-    printf("Received: %s\r\n", command);
-
-    if (strncmp(command, "STARTCAL", 8) == 0 ||
-        strncmp(command, "CURRENT", 7) == 0 ||
-        strncmp(command, "SHOWCAL", 7) == 0 ||
-        strncmp(command, "SAVECAL", 7) == 0 ||
-        strncmp(command, "FIXEDCAL", 8) == 0) {
-        CurrentCalibrator_ProcessCommand(command);
-    } else {
-        ExecuteCommand(command);
-    }
-}
 
 //-----------------------------------------------------------------
 // void uart_init(u32 bound)
@@ -147,19 +120,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 					USART_RX_STA=0;
 				else{ 										// 接收完成了 
 					USART_RX_STA|=0x8000;	
-					USART_RX_BUF[USART_RX_STA & 0x3FFF] = '\0';
-
-                    if (!g_uart_command_ready) {
-                        strncpy(g_uart_pending_command,
-                                (const char *)USART_RX_BUF,
-                                sizeof(g_uart_pending_command) - 1U);
-                        g_uart_pending_command[sizeof(g_uart_pending_command) - 1U] = '\0';
-                        g_uart_command_ready = 1;
-                    }
-                    USART_RX_STA = 0;
-                    return;
+					USART_RX_BUF[USART_RX_STA & 0x3FFF] = '\0'; 
 	
-#if 0 /* Command execution moved to USART_ProcessPendingCommand(). */
                     char* command = (char*)USART_RX_BUF;
                 printf("Received: %s\r\n", USART_RX_BUF);					
 
@@ -234,7 +196,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
                     
 										
 					USART_RX_STA=0;
-#endif
 				}
 			}
 			else // 还没收到0X0D
@@ -327,3 +288,5 @@ int fputc(int ch, FILE *f)
 //-----------------------------------------------------------------
 // End Of File
 //-----------------------------------------------------------------
+
+

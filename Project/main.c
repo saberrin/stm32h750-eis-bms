@@ -112,7 +112,6 @@ int main(void)
     // 主循环
     while (1) {
 
-        USART_ProcessPendingCommand();
         Runtime_BackgroundTask();
 
         switch (g_current_state) {
@@ -180,7 +179,7 @@ int main(void)
             case SYS_EIS_SINGLE: //************************单频EIS测试程序************************
                set_excitation_current(QG_ACVoltPP);// 设置激励电流大小，单位A
                 if (CommandParam1 == 0) {
-                    for (int i = 0; i < 52; i++) {     //循环过程要加保护检测!!!!!!!!!!!
+                    for (int i = 1; i <= 52; i++) {     //循环过程要加保护检测!!!!!!!!!!!
                         SwitchWindow_Program(i);
 											  if (CheckCellVoltage(i)) {
                          continue;}
@@ -190,7 +189,7 @@ int main(void)
                     }
                 } else if (0 < CommandParam1 && CommandParam1 < 53) {
                     SwitchWindow_Program(CommandParam1);                              // 切换到参数1定义的电芯号
-									  if (CheckCellVoltage(CommandParam1)) {
+									  if (!CheckCellVoltage(CommandParam1)) {
                         
                       EIS_SingleFrequency_Measure(CommandParam2);
                       RuntimeFlash_OnEisFinished();

@@ -1,5 +1,6 @@
 // MOS_Controller.c
 #include "MOS_Controller.h"
+#include "global_command.h"
 #include <math.h>
 
 // Small spin delay for latch timing
@@ -158,6 +159,8 @@ static inline void X_Set_ByStep(uint8_t s)
 
 void SwitchWindow_Program(uint8_t s)
 {
+    /* 0 means that no stable cell is selected while the matrix is switching. */
+    Cell_ID = 0;
 		//默认保持译码器开关关闭
 		S_All_Disable();       // 禁止所有 4514 译码器
 		HAL_GPIO_WritePin(HC74139_ENABLE_PORT, HC74139_ENABLE_PIN, GPIO_PIN_SET);       // 禁止所有 139 译码器
@@ -183,6 +186,7 @@ void SwitchWindow_Program(uint8_t s)
         }
 
         X_Set_ByStep(s);
+        Cell_ID = (int)s;
         return;
     }
 
@@ -207,6 +211,7 @@ void SwitchWindow_Program(uint8_t s)
         }
 
         X_Set_ByStep(s);
+        Cell_ID = (int)s;
         return;
     }
 
@@ -253,6 +258,7 @@ void SwitchWindow_Program(uint8_t s)
 
         // -------- 设置 139 译码器 --------
         X_Set_ByStep(s);
+        Cell_ID = (int)s;
 
         return;
     }
@@ -265,6 +271,7 @@ void SwitchWindow_Program(uint8_t s)
 
 
 void SwitchWindow_Program_Test(uint8_t s) {
+    Cell_ID = 0; /* Test wiring does not identify a measurable cell. */
 //    HAL_GPIO_WritePin(S1_PORT, S1_PIN, GPIO_PIN_SET);
 //    HAL_GPIO_WritePin(S2_PORT, S2_PIN, GPIO_PIN_SET);
 
@@ -348,6 +355,7 @@ void Decoder_Select_2to4(DecoderGroup_t group, uint8_t value) {
 }
 
 void SwitchMatrix_Init(void) {
+    Cell_ID = 0;
     // Enable GPIO clocks
     __HAL_RCC_GPIOH_CLK_ENABLE();
 		__HAL_RCC_GPIOC_CLK_ENABLE();
@@ -458,6 +466,7 @@ int SelfTest_Run(float dv_min, float dv_max) {
 
     // Optionally disable all after test
     S_All_Disable();
+    Cell_ID = 0;
     return fail == 0 ? 0 : fail;
 }
 
@@ -498,6 +507,7 @@ void Measure_Impedance_Sweep(float excite_mA, uint32_t settle_ms, float Z_out[50
     }
     // Optionally disable all after sweep
     S_All_Disable();
+    Cell_ID = 0;
 }
 
 // Weak default hooks (replace in user code)

@@ -32,7 +32,8 @@ volatile float		QG_CURR_DIS_ALARM=10;	//设置外部放电电流过流报警阈值（超过应停止
 volatile uint32_t QG_CELL_COUNT=52 ;		//设置电池包内电芯数量
 volatile float    SET_CALIB_DATA[10];			//设置测量通道（电压、电流、温度）的校准系数数组
 
-volatile int Cell_ID = 1; 
+/* 0: no cell selected; 1..52: selected by SwitchWindow_Program(). */
+volatile int Cell_ID = 0;
 
 
 volatile int g_system_error_code=STATUS_NORMAL;
