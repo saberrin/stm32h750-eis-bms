@@ -174,35 +174,37 @@ void Auto_Set_ADC_SampleRate(double Freq)
 		
 		
 	//////////////////////////314大电芯/////////////////////////////////////////	
-    if (Freq > 2000.0)
-      target_sps = 125000U;
-		
-	//	  target_sps = 31250U;
-//    else if (Freq > 5000.0)
-//        target_sps = 31250U;
-//    else if (Freq > 1000.0)
-//        target_sps = 15625U;
-//    else if (Freq > 100.0)
-//        target_sps = 3906U;
-//    else if (Freq > 30.0)
-//        target_sps = 488U;
-//    else
-//        target_sps = 61U;
-//			if (Freq >= 1000.0)
-//        target_sps = 125000U;
-//			else if (Freq > 100.0)
-//        target_sps = 15625U;
-//			else if (Freq > 10.0)
-//        target_sps = 3906U;
-			else
-				target_sps = 3906U;
+//    if (Freq > 2000.0)
+//      target_sps = 125000U;
+//		
+//	//	  target_sps = 31250U;
+////    else if (Freq > 5000.0)
+////        target_sps = 31250U;
+////    else if (Freq > 1000.0)
+////        target_sps = 15625U;
+////    else if (Freq > 100.0)
+////        target_sps = 3906U;
+////    else if (Freq > 30.0)
+////        target_sps = 488U;
+////    else
+////        target_sps = 61U;
+////			if (Freq >= 1000.0)
+////        target_sps = 125000U;
+////			else if (Freq > 100.0)
+////        target_sps = 15625U;
+////			else if (Freq > 10.0)
+////        target_sps = 3906U;
+//			else
+//				target_sps = 3906U;
 /////////////////////////////////////////////////////////////////////////////////
 			
 			
 			
 	//////////////////////////18650大电芯/////////////////////////////////////////	
-
-		//		target_sps = 31250U;
+    if (Freq > 5000.0)
+      target_sps = 125000U;
+		else
+			target_sps = 31250U;
 /////////////////////////////////////////////////////////////////////////////////			
 			
 			
