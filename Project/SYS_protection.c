@@ -169,37 +169,88 @@ float read_ambient_temperature(void)
 
 
 
-/**
- * @brief 双重电压检测 - 检查CH3电压是否正常
- * @param cell_index 当前电芯编号（仅用于打印提示）
- * @return uint8_t 0=电压正常，1=电压异常（需跳过当前电芯）
- */
 uint8_t CheckCellVoltage(uint8_t cell_index)
 {
-   
+    float V_TOP, V_MID, V_BOT;
+
+    // 第一次采样
+    V_TOP = ADS131A0X_Read_Channel(2)*2.50248756f - ADS131A0X_Read_Channel(1);
+    V_MID = ADS131A0X_Read_Channel(1);
+    V_BOT = 3.2;//(2.63f-ADS131A0X_Read_Channel(3)*1.66562f)/0.666562f;  目前硬件有点BUG，需更改硬件,暂时定死3.2V!!!!!!!!!!!!!!
+
+    printf("V_TOP=  %.3f V\r\n", V_TOP);
+    printf("V_MID=  %.3f V\r\n", V_MID);
+    printf("V_BOT=  %.3f V\r\n", V_BOT);
+
+    // 判断：任意一个电压超出区间即为异常
+    uint8_t first_bad = 0;
+    if( V_TOP < 3.0f || V_TOP > 3.5f ||
+        V_MID < 3.0f || V_MID > 3.5f ||
+        V_BOT < 3.0f || V_BOT > 3.5f )
+    {
+        first_bad = 1;
+    }
+
+    // 第一次全部正常，直接返回0
+    if(first_bad == 0)
+    {
+        return 0;
+    }
+
+    // 第一次异常，延时重测
+    delay_ms(10);
+
+    // 第二次采样
+    V_TOP = ADS131A0X_Read_Channel(2)*2.50248756f - ADS131A0X_Read_Channel(1);
+    V_MID = ADS131A0X_Read_Channel(1);
+    V_BOT =3.2;// (2.63f-ADS131A0X_Read_Channel(3)*1.66562f)/0.666562f;
 
 
 
-//	float voltage_check = ADS131A0X_Read_Channel(1);
-//    
-//    /* 第一次检测正常，直接返回 */
-//    if (voltage_check >= 3.0f)
-//        return 0;
-//    
-//    /* 第一次检测异常，延迟后再次确认 */
-//    delay_ms(10);
-//    voltage_check = ADS131A0X_Read_Channel(1);
-//    
-//    /* 第二次恢复正常，认为是干扰，继续执行 */
-//    if (voltage_check >= 3.0f)
-//        return 0;
-//    
-//		
-//    /* 两次都低于3.0V，确认真实欠压 */
-//    printf("Cell %d voltage too low (%.3f V)! EIS will skip this battery\r\n", cell_index, voltage_check);
-//    return 1;
-			return 0;
+		
+    printf("Retry: V_TOP=  %.3f V\r\n", V_TOP);
+    printf("Retry: V_MID=  %.3f V\r\n", V_MID);
+    printf("Retry: V_BOT=  %.3f V\r\n", V_BOT);
+
+    uint8_t second_bad = 0;
+    if( V_TOP < 3.0f || V_TOP > 3.5f ||
+        V_MID < 3.0f || V_MID > 3.5f ||
+        V_BOT < 3.0f || V_BOT > 3.5f )
+    {
+        second_bad = 1;
+    }
+
+    // 第二次采样恢复正常，干扰，返回0
+    if(second_bad == 0)
+    {
+        return 0;
+    }
+
+    // 两次采样均异常，打印详细故障信息，返回1
+    printf("===== Cell %d group voltage abnormal =====\r\n", cell_index);
+    if(V_TOP < 3.0f)
+        printf("V_TOP(cell%d): %.3f V, too LOW\r\n", cell_index+1, V_TOP);
+    else if(V_TOP > 3.5f)
+        printf("V_TOP(cell%d): %.3f V, too HIGH\r\n", cell_index+1, V_TOP);
+
+    if(V_MID < 3.0f)
+        printf("V_MID(cell%d): %.3f V, too LOW\r\n", cell_index, V_MID);
+    else if(V_MID > 3.5f)
+        printf("V_MID(cell%d): %.3f V, too HIGH\r\n", cell_index, V_MID);
+
+    if(V_BOT < 3.0f)
+        printf("V_BOT(cell%d): %.3f V, too LOW\r\n", cell_index-1, V_BOT);
+    else if(V_BOT > 3.5f)
+        printf("V_BOT(cell%d): %.3f V, too HIGH\r\n", cell_index-1, V_BOT);
+
+    printf("EIS will skip this battery\r\n");
+    return 1;
 }
+
+
+
+
+
 
 
 ///**

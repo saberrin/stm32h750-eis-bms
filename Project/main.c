@@ -30,6 +30,8 @@
 #include "identity_flash.h"
 #include "runtime_flash.h"
 #include "calib_flash.h"
+#include "adc.h"
+
 
 //-----------------------------------------------------------------
 #define TIME_CLK 200000000
@@ -68,7 +70,7 @@ int main(void)
 
     // 开启2.048V的内部参考电压（如果使用外部基准电压的话，请屏蔽开启内部参考电压的程序）
     MY_VREFBUF_Init(SYSCFG_VREFBUF_VOLTAGE_SCALE0);
-
+	  MY_ADC_Init();    // 初始化ADC1通道4
     uint16_t id = norflash_ex_read_id();
 
     printf("%u\n", id);
@@ -104,10 +106,21 @@ int main(void)
     FDCAN1_Mode_Init(10, 4, 34, 5, FDCAN_MODE_NORMAL);  // EIS_CORE: 500 kbit/s, sample point 0.875
 
     FAN_Init();
-    FAN_Enable();
+    FAN_Disable();
     RELAY_Init();
 
 
+
+		
+
+		
+		
+		
+		
+		
+		
+		
+		
 
     // 主循环
     while (1) {
@@ -127,6 +140,7 @@ int main(void)
                     LED_Green_Off();
                     Power5200_Disable();               // 关闭激励MOS开关
                     SwitchWindow_Program(0);           // 关闭所有电芯选通开关
+									    FAN_Enable();
                 }
 
             case SYS_WARNING:   //************************设备异常状态************************
@@ -139,12 +153,15 @@ int main(void)
                     // 加入延时，避免CPU过载
                     delay_ms(100); // 假设延时100毫秒，请使用您自己的延时函数
                     //          protection_check(); // 继续检查保护状态
-                }
+                   FAN_Enable();
+
+												}
                 g_current_state = SYS_READY;
                 break;
 
             case SYS_EIS_SWEEP: //************************扫频EIS测试程序************************
-               set_excitation_current(QG_ACVoltPP);// 设置激励电流大小，单位A
+                FAN_Enable();   
+						set_excitation_current(QG_ACVoltPP);// 设置激励电流大小，单位A
                 if (CommandParam1 == 0) {
                     for (int i = 2; i <= 52; i++) {     //循环过程要加保护检测!!!!!!!!!!!
                         SwitchWindow_Program(i);
@@ -164,9 +181,14 @@ int main(void)
                     }
                 } else if (0 < CommandParam1 && CommandParam1 < 53) {
                     SwitchWindow_Program(CommandParam1);                              // 切换到参数1定义的电芯号
-									  if (!CheckCellVoltage(CommandParam1)) {
+									  
+									
+									
+									
+									if (!CheckCellVoltage(CommandParam1)) {
                         
-                         EIS_FrequencySweep_Measure(QG_EIS_FREQ_START, QG_EIS_FREQ_END);
+											
+											EIS_FrequencySweep_Measure(QG_EIS_FREQ_START, QG_EIS_FREQ_END);
                          RuntimeFlash_OnEisFinished();
 										}																
                      
@@ -177,7 +199,8 @@ int main(void)
                 break;
 
             case SYS_EIS_SINGLE: //************************单频EIS测试程序************************
-               set_excitation_current(QG_ACVoltPP);// 设置激励电流大小，单位A
+                FAN_Enable();   
+						set_excitation_current(QG_ACVoltPP);// 设置激励电流大小，单位A
                 if (CommandParam1 == 0) {
                     for (int i = 1; i <= 52; i++) {     //循环过程要加保护检测!!!!!!!!!!!
                         SwitchWindow_Program(i);
@@ -208,6 +231,7 @@ int main(void)
                 // Power5200_Enable() ;
                 // OutputConstantCurrent(0.2);//输出恒流，单位A
                 // Power5200_Disable() ;
+						    FAN_Enable();
                 g_current_state = SYS_READY;
                 break;
 
@@ -237,11 +261,31 @@ int main(void)
        
         delay_ms(50);
         Power5200_Disable();
-				 printf("通道0电压为  %.3f V\r\n",  ADS131A0X_Read_Channel(0)   );
-				printf("通道1电压为  %.3f V\r\n",  ADS131A0X_Read_Channel(1)   );
-				printf("通道2电压为  %.3f V\r\n",  ADS131A0X_Read_Channel(2)   );
-				printf("通道3电压为  %.3f V\r\n",  ADS131A0X_Read_Channel(3)   );
-    }
+//				printf("通道0电压为  %.3f V\r\n",  ADS131A0X_Read_Channel(0)   );
+//				printf("通道1电压为  %.3f V\r\n",  ADS131A0X_Read_Channel(1)   );
+//				printf("通道2电压为  %.3f V\r\n",  ADS131A0X_Read_Channel(2)   );
+//				printf("通道3电压为  %.3f V\r\n",  ADS131A0X_Read_Channel(3)   );
+				
+	
+       if (ds18b20_get_temperature_float()>40.0f)
+				FAN_Enable();
+			 else
+				 FAN_Disable();
+
+				
+				
+				printf("V_TOP=  %.3f V\r\n",  ADS131A0X_Read_Channel(2)*2.50248756f- ADS131A0X_Read_Channel(1)  );	//高边电芯电压			
+				printf("V_MID=  %.3f V\r\n",  ADS131A0X_Read_Channel(1)   );	                                      // 中间电芯电压
+				printf("V_BOT=  %.3f V\r\n",  (3.06f-ADS131A0X_Read_Channel(3)*1.634465f)/0.634465f  );             //低边电芯电压。     注意：这个电压暂时不太稳定，需要修改硬件！！！！！！！！！！！！！
+		
+
+			  printf("PACK_CURRENT： %.3f A\r\n",Get_Pack_Current()); //输出pack 电流	
+
+       printf("Terminal_INNER_TEMP：%.1f degC\r\n", ds18b20_get_temperature_float()); //输出机身内部温度
+				 printf("_________________\r\n");
+								
+							}		
+  
 
 }
 
