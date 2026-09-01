@@ -19,8 +19,11 @@
 #include "MOS_Controller.h"
 #include "AD620_GainCtrl.h"
 #include "ADS131A04.h"
+#include "adc.h"
+#include "ds18b20.h"
 #include "fft_analyzer.h"
 #include <stdint.h>
+#include <float.h>
 //-----------------------------------------------------------------
 #define TIME_CLK 200000000
 
@@ -54,9 +57,57 @@ typedef struct {
     float frequency;
 } EIS_DataRow;
 
+typedef struct {
+    float cell_voltage;
+    float pack_current;
+    float temperature;
+    uint8_t valid_flags;
+} EIS_TelemetrySnapshot;
+
+#define EIS_TELEMETRY_VOLTAGE_VALID      0x01U
+#define EIS_TELEMETRY_CURRENT_VALID      0x02U
+#define EIS_TELEMETRY_TEMPERATURE_VALID  0x04U
+
 EIS_DataRow eis_batch_buffer[MAX_EIS_POINTS];
 uint32_t batch_count = 0;
 uint8_t Meas_Comp_Flag = 0;
+static EIS_TelemetrySnapshot eis_telemetry_snapshot = {0};
+
+static uint8_t IsFiniteFloat(float value)
+{
+    return (value == value && value <= FLT_MAX && value >= -FLT_MAX) ? 1U : 0U;
+}
+
+static void Capture_EIS_Telemetry(void)
+{
+    float cell_voltage;
+    float pack_current;
+    float temperature;
+
+    memset(&eis_telemetry_snapshot, 0, sizeof(eis_telemetry_snapshot));
+
+    /* CH1/V_MID is the voltage of the cell currently selected by the matrix. */
+    cell_voltage = ADS131A0X_Read_Channel(1);
+    if (IsFiniteFloat(cell_voltage) && cell_voltage >= -10.0f && cell_voltage <= 10.0f) {
+        eis_telemetry_snapshot.cell_voltage = cell_voltage;
+        eis_telemetry_snapshot.valid_flags |= EIS_TELEMETRY_VOLTAGE_VALID;
+    }
+
+    Watchdog_Refresh();
+    pack_current = Get_Pack_Current();
+    if (IsFiniteFloat(pack_current) && pack_current >= -500.0f && pack_current <= 500.0f) {
+        eis_telemetry_snapshot.pack_current = pack_current;
+        eis_telemetry_snapshot.valid_flags |= EIS_TELEMETRY_CURRENT_VALID;
+    }
+
+    Watchdog_Refresh();
+    temperature = ds18b20_get_temperature_float();
+    if (IsFiniteFloat(temperature) && temperature >= -55.0f && temperature <= 125.0f) {
+        eis_telemetry_snapshot.temperature = temperature;
+        eis_telemetry_snapshot.valid_flags |= EIS_TELEMETRY_TEMPERATURE_VALID;
+    }
+    Watchdog_Refresh();
+}
 
 
 
@@ -303,6 +354,7 @@ void EIS_FrequencySweep_Measure(double Freq_Start, double Freq_End)
 {
     /* Never carry points from the previously selected cell into this GETE. */
     batch_count = 0;
+    Capture_EIS_Telemetry();
     
 
    
@@ -556,8 +608,14 @@ void Send_EIS_Result(void)
     char line_buffer[256];
 
     snprintf(line_buffer, sizeof(line_buffer),
-             ">0x%02X, GETE, %d, %.6f,CMD_OK,\r\n",
-             QG_ID, Cell_ID, CommandParam2);
+             ">0x%02X,GETE,%d,%.6f,CMD_OK,V,%.4f,CUR,%.4f,T,%.2f,VALID,%u;",
+             QG_ID,
+             Cell_ID,
+             CommandParam2,
+             eis_telemetry_snapshot.cell_voltage,
+             eis_telemetry_snapshot.pack_current,
+             eis_telemetry_snapshot.temperature,
+             (unsigned int)eis_telemetry_snapshot.valid_flags);
     FDCAN1_Send_String((uint8_t *)line_buffer);
     printf("%s", line_buffer);
 
